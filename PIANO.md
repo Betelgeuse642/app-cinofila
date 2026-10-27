@@ -1,6 +1,6 @@
 # PIANO — App Addestramento Cinofilo
 
-Stato: aggiornato al 26/10/2026 — **Fase 16 completata e verificata**. Aggiunti Archivio clienti, eliminazione a cascata con riepilogo e avvisi, rimozione completa dei dati di esempio e restyling "studio caldo". Suite complessiva **506 test superati, 0 fallimenti**: regressione 93, Fase 7 52, Fase 8 37, Fase 9 34, Fase 10 61, Fase 11 46, Fase 12 33, Fase 13 51, Fase 14 49, Fase 16 50.
+Stato: aggiornato al 27/10/2026 — **Fase 17 completata e verificata**. Messa in sicurezza del repository: documentazione Git/GitHub Pages, `.gitignore`, `.nojekyll`, flusso branch → test → PR → pubblicazione, verifica post-deploy, rollback e procedura tag `v1.0.0`. Nessuna modifica a `index.html`, `styles.css`, `app.js` o alle suite. Suite complessiva **506 test superati, 0 fallimenti**: regressione 93, Fase 7 52, Fase 8 37, Fase 9 34, Fase 10 61, Fase 11 46, Fase 12 33, Fase 13 51, Fase 14 49, Fase 16 50.
 
 ## Obiettivo e utenti
 
@@ -63,14 +63,28 @@ L'interfaccia è in italiano, semplice e orientata all'uso in mobilità.
 11. **Fase 12 — Ricerca, filtri e agenda**: ✅ **Completata e verificata** (33/33). Ricerca e filtri su clienti, pagamenti, appuntamenti e pacchetti; agenda raggruppata per giorno; filtri mantenuti.
 12. **Fase 13 — Accessibilità, focus, contrasto e responsive**: ✅ **Completata e verificata** (49/49). Titoli per vista, focus su form/scheda/incasso, Escape, `aria-expanded`/`aria-controls`, regioni etichettate, contrasto AA, mobile.
 13. **Fase 14 — Export CSV e report per periodo/cliente**: ✅ **Completata e verificata** (49/49). CSV incassi/pagamenti con BOM, escaping e protezione formule; report e resoconto filtrati per mese e cliente.
+14. **Fase 15–17 — Documentazione, archivio/restyling e sicurezza repository**: ✅ **Completate e verificate**. La Fase 17 (27/10/2026) aggiunge documentazione Git/Pages, `.gitignore`, `.nojekyll`, flusso di pubblicazione, rollback e procedura tag `v1.0.0`.
 
 ## Decisioni tecniche
 
 - **Stack**: HTML, CSS vanilla, JavaScript vanilla — nessuna dipendenza esterna, nessun framework, nessun build step, nessuna libreria aggiuntiva, nessun server.
 - **Persistenza**: `localStorage` del browser (chiave `cinofilo-data-v1`); nessun backend, nessuna sincronizzazione.
 - **Linguaggio**: UI e messaggi interamente in italiano.
-- **Distribuzione**: file statici apribili via `file://` (index.html, styles.css, app.js).
+- **Distribuzione**: file statici apribili via `file://` e pubblicati su GitHub Pages dal branch `main`, cartella `/`, con HTTPS attivo.
+- **Repository**: pubblico su GitHub (`Betelgeuse642/app-cinofila`); `main` è il branch pubblicato; non esiste una CI di test.
 - **Test automatizzati**: Playwright (Chromium headless), suite locale senza dipendenze nuove oltre Playwright già presente.
+
+## Repository e pubblicazione
+
+- **Repository**: <https://github.com/Betelgeuse642/app-cinofila.git>, pubblico.
+- **GitHub Pages**: abilitato, tipo `legacy`, sorgente branch `main` cartella `/`, HTTPS forzato.
+- **URL pubblico**: <https://betelgeuse642.github.io/app-cinofila/>.
+- **Pubblicazione**: ogni push o merge su `main` aggiorna il sito. Non lavorare direttamente su `main`; usare un branch dedicato, test, controllo diff, commit, push del branch e pull request. Il merge su `main` richiede approvazione esplicita.
+- **CI**: assente. Le suite Playwright sono fuori dal repository e vanno eseguite manualmente prima del merge.
+- **Sicurezza dati**: non inserire nel repository dati personali, backup o esportazioni JSON/CSV. `.gitignore` copre cache Python, file temporanei, log ed export dell'app.
+- **Verifica post-deploy**: attendere la build Pages, aprire l'URL pubblico con hard refresh, controllare console, persistenza, export/import e layout mobile.
+- **Rollback**: `git revert` del commit problematico, poi push su `main`; mai force push. Ripristinare il backup JSON se il problema riguarda i dati.
+- **Tag versione**: la procedura concordata è creare il tag annotato `v1.0.0` sul commit `68cdc1e` e pusharlo solo dopo approvazione.
 
 ## Funzioni pianificate
 
@@ -89,8 +103,12 @@ L'interfaccia è in italiano, semplice e orientata all'uso in mobilità.
 - **Nessuna sincronizzazione**: i dati non sono share tra dispositivi né tra browser; per trasferirli serve export/import manuale.
 - **Nessun account/autenticazione**: l'app è mono-utentatore locale.
 - **Import**: senza confirm esplicito non sovrascrive mai; un import convalidato sostituisce l'intero dataset.
+- **Sito pubblico**: GitHub Pages è raggiungibile da chiunque e non ha autenticazione; i dati restano nel browser. Non inserire dati personali, backup o esportazioni nel repository.
+- **Origine dati**: `localStorage` è separato tra `file://` e URL Pages; per trasferire dati usare export/import JSON. Lo stesso vale per un futuro dominio personalizzato.
 
 ## Test eseguiti e risultati effettivi
+
+> Nota storica: la suite citata in questa sezione non è più quella corrente. Le suite attuali sono elencate in `AGENTS.md` e nella Fase 17; i conteggi correnti sono 506 test.
 
 Suite Playwright (`/tmp/opencode/test_cinofilo.py`), Chromium headless, 14 gruppi di test su 55 asserzioni:
 
@@ -963,4 +981,61 @@ Copertura: filtro cliente su schermo e report, totali filtrati, CSV incassi/paga
 ## Fermo
 
 - **Tutte le fasi approvate 8–15 sono completate e verificate**. Non sono state avviate funzionalità oltre la roadmap approvata.
+
+---
+
+# Fase 17 — Messa in sicurezza del repository (completata e verificata)
+
+## Richiesta approvata
+
+- Documentare correttamente Git, GitHub Pages e il flusso di pubblicazione.
+- Aggiungere `.gitignore` e, se appropriato, `.nojekyll`.
+- Documentare verifica post-pubblicazione, rollback e tag `v1.0.0`.
+- Non modificare app, test, configurazioni GitHub o Pages; nessun commit/push/merge/tag.
+
+## Attività svolte
+
+- [x] Aggiornare `AGENTS.md`, `README.md` e `PIANO.md`.
+- [x] Aggiungere `.gitignore` per cache Python, file temporanei, log ed esportazioni JSON/CSV.
+- [x] Aggiungere `.nojekyll`, appropriato perché l'app è statica e non usa Jekyll.
+- [x] Documentare il flusso branch → test → diff → commit → PR → merge su `main`.
+- [x] Documentare la verifica post-pubblicazione e il rollback.
+- [x] Documentare la procedura per il tag `v1.0.0`.
+- [x] Eseguire i 506 test e i controlli finali.
+
+## Implementazione effettiva
+
+- **Documentazione Git/Pages**: `AGENTS.md`, `README.md` e `PIANO.md` ora riportano repository pubblico, branch `main`, GitHub Pages, URL del sito, flusso di pubblicazione, verifica post-deploy e rollback.
+- **`AGENTS.md`**: rimossa l'indicazione errata "Il progetto non è un repository Git"; aggiunte istruzioni su branch, pull request, approvazione, dati locali e divieto di pubblicare dati personali o export.
+- **`README.md`**: aggiunte sezioni "Uso online", "Repository e pubblicazione", flusso di aggiornamento, verifica post-deploy, rollback e procedura tag; chiarita la separazione di `localStorage` tra `file://` e URL Pages.
+- **`.gitignore`**: esclude cache Python (`__pycache__/`, `*.py[cod]`, `.pytest_cache/`, ambienti virtuali), file temporanei, log ed export dell'app (`cinofilo-dati-*.json`, `incassi_*.csv`, `pagamenti_*.csv`).
+- **`.nojekyll`**: file vuoto nella root; disabilita l'elaborazione Jekyll di Pages, appropriato per un sito statico senza directory con underscore.
+- **Nessuna modifica applicativa**: `index.html`, `styles.css` e `app.js` invariati rispetto a `HEAD`; suite di test non modificate né spostate.
+- **Nessuna pubblicazione o configurazione**: nessun commit, push, merge o tag; nessuna modifica a GitHub o GitHub Pages. Il sito live è rimasto invariato.
+
+## Test effettivi
+
+- Suite completa: **506 test superati, 0 fallimenti** (27/10/2026).
+- Regressione **93/93**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **33/33**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**; tutte le suite con exit code 0.
+- `git diff --check`: exit code 0, nessun errore di whitespace.
+- `git status --short --branch`: `main...origin/main`; modificati `AGENTS.md`, `PIANO.md` e `README.md`; non tracciati `.gitignore` e `.nojekyll`.
+- `git diff --stat`: 3 file modificati; `.gitignore` e `.nojekyll` sono untracked e non compaiono nel diff stat.
+- Verifica app: `git diff --quiet HEAD -- index.html styles.css app.js` conferma che i tre file applicativi sono invariati.
+- Verifica dati: nessun file `*.json`, `*.csv`, `*.log` o `*.pyc` nel repository; nessun dato personale o export aggiunto.
+- Verifica `.gitignore`: i file applicativi non risultano ignorati; i pattern degli export e delle cache risultano attivi.
+- Verifica `.nojekyll`: file da 0 byte.
+- Verifica sito live: HTTP 200, hash SHA-256 di `index.html`, `styles.css` e `app.js` identici ai file locali; il sito è ancora alla versione stabile `68cdc1e`.
+- Verifica suite: nessun file delle suite modificato durante l'esecuzione.
+
+## Problemi aperti / note
+
+- Il tag `v1.0.0` **non è stato creato** (vincolo della fase); la procedura è documentata e pronta per l'approvazione.
+- `main` resta non protetto, senza CI di test e con le suite fuori dal repository: sono limiti noti, non modificati in questa fase.
+- `.gitignore` e `.nojekyll` sono untracked: entreranno nel prossimo commit/PR solo dopo approvazione.
+- `.nojekyll` sarà effettivo solo al prossimo deploy Pages; in questa fase il sito non è stato pubblicato.
+- Nessuna modifica a `index.html`, `styles.css`, `app.js` o alle suite.
+
+## Prossimo passo
+
+- Fase 17 chiusa. Per pubblicare: commit e pull request con questi file, merge su `main` solo dopo approvazione, verifica della build Pages e del sito, quindi creazione del tag `v1.0.0`. Non avviare altre fasi senza approvazione.
 
