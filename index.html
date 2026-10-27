@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Addestramento Cinofilo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div id="app-banner" class="app-banner" role="alert" hidden></div>
+
+  <!-- =========== HOME =========== -->
+  <main id="view-home" class="view">
+    <header class="home-header">
+      <p class="home-eyebrow">Studio cinofilo · gestione quotidiana</p>
+      <h1 class="home-title">Addestramento Cinofilo</h1>
+      <p class="home-subtitle">Clienti, lezioni e incassi in un unico posto, sul tuo dispositivo.</p>
+    </header>
+
+    <nav class="home-grid" aria-label="Sezione principale">
+      <a href="#clienti" class="home-btn" data-nav="clienti">
+        <span class="home-btn__no" aria-hidden="true">01</span>
+        <span class="home-btn__label">Clienti</span>
+        <span class="home-btn__hint">Anagrafica, schede e storico</span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+      <a href="#pagamenti" class="home-btn" data-nav="pagamenti">
+        <span class="home-btn__no" aria-hidden="true">02</span>
+        <span class="home-btn__label">Pagamenti</span>
+        <span class="home-btn__hint">Contratti, incassi e saldi</span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+      <a href="#appuntamenti" class="home-btn" data-nav="appuntamenti">
+        <span class="home-btn__no" aria-hidden="true">03</span>
+        <span class="home-btn__label">Appuntamenti</span>
+        <span class="home-btn__hint">Agenda e lezioni svolte</span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+      <a href="#pacchetti" class="home-btn" data-nav="pacchetti">
+        <span class="home-btn__no" aria-hidden="true">04</span>
+        <span class="home-btn__label">Pacchetti</span>
+        <span class="home-btn__hint">Lezioni acquistate e rimaste</span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+      <a href="#resoconto" class="home-btn" data-nav="resoconto">
+        <span class="home-btn__no" aria-hidden="true">05</span>
+        <span class="home-btn__label">Resoconto</span>
+        <span class="home-btn__hint">Mese, report e backup</span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+      <a href="#archivio" class="home-btn" data-nav="archivio">
+        <span class="home-btn__no" aria-hidden="true">06</span>
+        <span class="home-btn__label">Archivio</span>
+        <span class="home-btn__hint">Clienti archiviati</span>
+        <span id="archivio-count" class="home-btn__count" hidden></span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+    </nav>
+    <div class="home-extra">
+      <p class="home-extra__hint">I dati restano solo su questo dispositivo. Esporta un backup dal Resoconto.</p>
+    </div>
+  </main>
+
+  <!-- =========== CLIENTI =========== -->
+  <main id="view-clienti" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Clienti</h2>
+      <button id="btn-nuovo-cliente" class="btn-action" type="button" aria-controls="form-cliente" aria-expanded="false">+ Nuovo cliente</button>
+    </header>
+    <div class="filter-bar">
+      <input id="filtro-clienti" type="search" placeholder="Cerca nome, cane o telefono" aria-label="Cerca clienti" />
+      <select id="filtro-clienti-stato" aria-label="Filtra clienti per stato">
+        <option value="">Tutti gli stati</option>
+        <option value="Attivo">Attivo</option>
+        <option value="Pausa">Pausa</option>
+      </select>
+    </div>
+    <div id="form-cliente" class="form-panel" hidden>
+      <h3 data-form-title>Nuovo cliente</h3>
+      <form data-form="cliente">
+        <input type="hidden" name="id" />
+        <label>
+          <span>Nome e cognome</span>
+          <input type="text" name="nome" required autocomplete="off" />
+        </label>
+        <label>
+          <span>Telefono</span>
+          <input type="tel" name="telefono" autocomplete="off" />
+        </label>
+        <label>
+          <span>Nome del cane</span>
+          <input type="text" name="cane" required autocomplete="off" />
+        </label>
+        <label>
+          <span>Razza (facoltativa)</span>
+          <input type="text" name="razza" autocomplete="off" />
+        </label>
+        <label>
+          <span>Età cane (facoltativa)</span>
+          <div class="field-age">
+            <input type="text" name="eta" autocomplete="off" />
+            <span class="field-suffix">anni</span>
+          </div>
+        </label>
+        <label>
+          <span>Note sul cane (comportamento, difficoltà, obiettivi)</span>
+          <textarea name="note" rows="3" autocomplete="off"></textarea>
+        </label>
+        <label>
+          <span>Stato cliente</span>
+          <select name="stato">
+            <option value="Attivo">Attivo</option>
+            <option value="Pausa">Pausa</option>
+            <option value="Archiviato">Archiviato</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="form-cliente">Annulla</button>
+        </div>
+      </form>
+    </div>
+    <div id="cliente-dettaglio" class="detail-panel" role="region" aria-labelledby="cliente-dettaglio-title" tabindex="-1" hidden></div>
+    <ul id="clienti-list" class="list"></ul>
+    <section id="orfani-panel" class="orphan-panel" hidden>
+      <h3>Dati senza cliente</h3>
+      <p class="muted">Pagamenti, appuntamenti e pacchetti rimasti senza cliente. Assegnali a un cliente o eliminali.</p>
+      <div id="orfani-list"></div>
+    </section>
+  </main>
+
+  <!-- =========== ARCHIVIO =========== -->
+  <main id="view-archivio" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Archivio</h2>
+    </header>
+    <p class="section-intro">I clienti archiviati restano consultabili con tutto il loro storico. Puoi riattivarli o eliminarli definitivamente.</p>
+    <div class="filter-bar">
+      <input id="filtro-archivio" type="search" placeholder="Cerca un cliente archiviato" aria-label="Cerca nell'archivio" />
+    </div>
+    <div id="archivio-dettaglio" class="detail-panel" role="region" aria-labelledby="archivio-dettaglio-title" tabindex="-1" hidden></div>
+    <ul id="archivio-list" class="list"></ul>
+  </main>
+
+  <!-- =========== PAGAMENTI =========== -->
+  <main id="view-pagamenti" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Pagamenti</h2>
+      <button id="btn-nuovo-pagamento" class="btn-action" type="button" aria-controls="form-pagamento" aria-expanded="false">+ Nuovo pagamento</button>
+    </header>
+    <div class="filter-bar">
+      <input id="filtro-pagamenti" type="search" placeholder="Cerca cliente, descrizione o importo" aria-label="Cerca pagamenti" />
+      <select id="filtro-pagamenti-stato" aria-label="Filtra pagamenti per stato">
+        <option value="">Tutti gli stati</option>
+        <option value="Pagato">Pagato</option>
+        <option value="Parziale">Parziale</option>
+        <option value="Da pagare">Da pagare</option>
+        <option value="Da verificare">Da verificare</option>
+      </select>
+    </div>
+    <div id="form-pagamento" class="form-panel" hidden>
+      <h3 data-form-title>Nuovo pagamento</h3>
+      <form data-form="pagamento">
+        <input type="hidden" name="id" />
+        <label>
+          <span>Cliente</span>
+          <select name="clienteId" required></select>
+        </label>
+        <label>
+          <span>Importo contratto (€)</span>
+          <input type="number" name="importo" min="0.01" step="0.01" required />
+        </label>
+        <label>
+          <span>Data contratto</span>
+          <input type="date" name="data" required />
+        </label>
+        <label>
+          <span>Descrizione</span>
+          <input type="text" name="descrizione" autocomplete="off" />
+        </label>
+        <div data-receipt-fields>
+          <label>
+            <span>Incasso iniziale (€, opzionale)</span>
+            <input type="number" name="acconto" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Data incasso iniziale</span>
+            <input type="date" name="dataIncasso" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="form-pagamento">Annulla</button>
+        </div>
+      </form>
+    </div>
+    <ul id="pagamenti-list" class="list"></ul>
+  </main>
+
+  <!-- =========== APPUNTAMENTI =========== -->
+  <main id="view-appuntamenti" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Appuntamenti</h2>
+      <button id="btn-nuovo-appuntamento" class="btn-action" type="button" aria-controls="form-appuntamento" aria-expanded="false">+ Nuovo appuntamento</button>
+    </header>
+    <div class="filter-bar">
+      <input id="filtro-appuntamenti" type="search" placeholder="Cerca cliente, tipo o data" aria-label="Cerca appuntamenti" />
+      <select id="filtro-appuntamenti-stato" aria-label="Filtra appuntamenti per stato">
+        <option value="">Tutti</option>
+        <option value="da-fare">Da fare</option>
+        <option value="fatti">Fatti</option>
+      </select>
+      <select id="filtro-appuntamenti-periodo" aria-label="Filtra appuntamenti per periodo">
+        <option value="">Tutte le date</option>
+        <option value="oggi">Oggi</option>
+        <option value="7">Prossimi 7 giorni</option>
+        <option value="passati">Passati</option>
+      </select>
+    </div>
+    <div id="form-appuntamento" class="form-panel" hidden>
+      <h3 data-form-title>Nuovo appuntamento</h3>
+      <form data-form="appuntamento">
+        <input type="hidden" name="id" />
+        <label>
+          <span>Cliente</span>
+          <select name="clienteId" required></select>
+        </label>
+        <label>
+          <span>Data</span>
+          <input type="date" name="data" required />
+        </label>
+        <label>
+          <span>Ora</span>
+          <input type="time" name="ora" required />
+        </label>
+        <label>
+          <span>Tipo di lezione</span>
+          <select name="tipo" required>
+            <option value="Addestramento">Addestramento</option>
+            <option value="Esame">Esame</option>
+            <option value="Valutazione">Valutazione</option>
+            <option value="Ritiro">Ritiro</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="form-appuntamento">Annulla</button>
+        </div>
+      </form>
+    </div>
+    <ul id="appuntamenti-list" class="list"></ul>
+  </main>
+
+  <!-- =========== PACCHETTI =========== -->
+  <main id="view-pacchetti" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Pacchetti di lezioni</h2>
+      <button id="btn-nuovo-pacchetto" class="btn-action" type="button" aria-controls="form-pacchetto" aria-expanded="false">+ Nuovo pacchetto</button>
+    </header>
+    <div class="filter-bar">
+      <input id="filtro-pacchetti" type="search" placeholder="Cerca cliente, cane o prezzo" aria-label="Cerca pacchetti" />
+      <select id="filtro-pacchetti-stato" aria-label="Filtra pacchetti per stato">
+        <option value="">Tutti</option>
+        <option value="attivi">Con lezioni disponibili</option>
+        <option value="esauriti">Esauriti</option>
+      </select>
+    </div>
+    <div id="form-pacchetto" class="form-panel" hidden>
+      <h3 data-form-title>Nuovo pacchetto</h3>
+      <form data-form="pacchetto">
+        <input type="hidden" name="id" />
+        <label>
+          <span>Cliente</span>
+          <select name="clienteId" required></select>
+        </label>
+        <label>
+          <span>Numero di lezioni</span>
+          <input type="number" name="lezioni" min="1" step="1" required />
+        </label>
+        <label>
+          <span>Prezzo totale (€)</span>
+          <input type="number" name="prezzo" min="0.01" step="0.01" required />
+        </label>
+        <div data-receipt-fields>
+          <label>
+            <span>Acconto / versato (€, opzionale)</span>
+            <input type="number" name="acconto" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Data incasso acconto</span>
+            <input type="date" name="dataIncasso" />
+          </label>
+        </div>
+        <label>
+          <span>Data di acquisto</span>
+          <input type="date" name="data" required />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="form-pacchetto">Annulla</button>
+        </div>
+      </form>
+    </div>
+    <ul id="pacchetti-list" class="list"></ul>
+  </main>
+
+  <!-- =========== RESOCONTO =========== -->
+  <main id="view-resoconto" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Resoconto</h2>
+      <div class="section-header__actions">
+        <button id="btn-esporta" class="btn-action" type="button">Esporta dati</button>
+        <button id="btn-esporta-pdf" class="btn-action" type="button">Esporta PDF</button>
+        <button id="btn-importa" class="btn-action" type="button">Importa dati</button>
+        <input id="file-import" type="file" accept=".json,application/json" hidden />
+      </div>
+    </header>
+    <div class="resoconto-mese-row">
+      <label for="resoconto-mese">Mese di riferimento</label>
+      <select id="resoconto-mese" aria-label="Mese di riferimento del resoconto"></select>
+    </div>
+    <div class="resoconto-mese-row">
+      <label for="resoconto-cliente">Cliente</label>
+      <select id="resoconto-cliente" aria-label="Cliente del resoconto"></select>
+    </div>
+    <div class="resoconto-csv-actions">
+      <button id="btn-csv-incassi" class="btn-action" type="button">Esporta CSV incassi</button>
+      <button id="btn-csv-pagamenti" class="btn-action" type="button">Esporta CSV pagamenti</button>
+    </div>
+    <div id="resoconto" class="resoconto"></div>
+
+    <section class="backup-panel" aria-labelledby="backup-title">
+      <h3 id="backup-title">Backup e ripristino</h3>
+      <p id="backup-last" class="backup-panel__last"></p>
+      <div class="backup-panel__actions">
+        <button id="btn-backup-now" class="btn-action" type="button">Scarica backup JSON</button>
+        <button id="btn-restore-snapshot" class="btn-action" type="button">Ripristina ultimo snapshot</button>
+      </div>
+      <p class="backup-panel__hint">Lo snapshot automatico conserva l'ultima versione precedente alle modifiche. Non sostituisce un backup esterno.</p>
+    </section>
+  </main>
+
+  <div id="status-bar" class="status-bar" role="status" aria-live="polite" hidden></div>
+
+  <!-- Report stampabile (Fase 7): nascosto a schermo, visibile solo in stampa/PDF. -->
+  <section id="report-print" class="report"></section>
+
+  <script src="app.js"></script>
+</body>
+</html>
