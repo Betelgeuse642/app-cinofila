@@ -1,6 +1,6 @@
 # PIANO — App Addestramento Cinofilo
 
-Stato: aggiornato al 27/10/2026 — **Fase 17 completata e verificata**. Messa in sicurezza del repository: documentazione Git/GitHub Pages, `.gitignore`, `.nojekyll`, flusso branch → test → PR → pubblicazione, verifica post-deploy, rollback e procedura tag `v1.0.0`. Nessuna modifica a `index.html`, `styles.css`, `app.js` o alle suite. Suite complessiva **506 test superati, 0 fallimenti**: regressione 93, Fase 7 52, Fase 8 37, Fase 9 34, Fase 10 61, Fase 11 46, Fase 12 33, Fase 13 51, Fase 14 49, Fase 16 50.
+Stato: aggiornato al 27/10/2026 — **Fase 17 completata, pubblicata e verificata**. Messa in sicurezza del repository: documentazione Git/GitHub Pages, `.gitignore`, `.nojekyll`, flusso branch → test → PR → pubblicazione, verifica post-deploy, rollback e tag `v1.0.0`. Nessuna modifica a `index.html`, `styles.css`, `app.js` o alle suite. Suite complessiva **506 test superati, 0 fallimenti**: regressione 93, Fase 7 52, Fase 8 37, Fase 9 34, Fase 10 61, Fase 11 46, Fase 12 33, Fase 13 51, Fase 14 49, Fase 16 50.
 
 ## Obiettivo e utenti
 
@@ -84,7 +84,7 @@ L'interfaccia è in italiano, semplice e orientata all'uso in mobilità.
 - **Sicurezza dati**: non inserire nel repository dati personali, backup o esportazioni JSON/CSV. `.gitignore` copre cache Python, file temporanei, log ed export dell'app.
 - **Verifica post-deploy**: attendere la build Pages, aprire l'URL pubblico con hard refresh, controllare console, persistenza, export/import e layout mobile.
 - **Rollback**: `git revert` del commit problematico, poi push su `main`; mai force push. Ripristinare il backup JSON se il problema riguarda i dati.
-- **Tag versione**: la procedura concordata è creare il tag annotato `v1.0.0` sul commit `68cdc1e` e pusharlo solo dopo approvazione.
+- **Tag versione**: `v1.0.0` è un tag annotato che punta al commit stabile `68cdc1e`; è stato pubblicato su `origin`.
 
 ## Funzioni pianificate
 
@@ -986,12 +986,14 @@ Copertura: filtro cliente su schermo e report, totali filtrati, CSV incassi/paga
 
 # Fase 17 — Messa in sicurezza del repository (completata e verificata)
 
-## Richiesta approvata
+## Richiesta iniziale
 
 - Documentare correttamente Git, GitHub Pages e il flusso di pubblicazione.
 - Aggiungere `.gitignore` e, se appropriato, `.nojekyll`.
 - Documentare verifica post-pubblicazione, rollback e tag `v1.0.0`.
-- Non modificare app, test, configurazioni GitHub o Pages; nessun commit/push/merge/tag.
+- Non modificare app, test, configurazioni GitHub o Pages durante la preparazione.
+
+La pubblicazione (merge, push e tag) è stata autorizzata successivamente e completata solo dopo i test.
 
 ## Attività svolte
 
@@ -1002,6 +1004,7 @@ Copertura: filtro cliente su schermo e report, totali filtrati, CSV incassi/paga
 - [x] Documentare la verifica post-pubblicazione e il rollback.
 - [x] Documentare la procedura per il tag `v1.0.0`.
 - [x] Eseguire i 506 test e i controlli finali.
+- [x] Eseguire merge, verificare Pages e creare il tag `v1.0.0`.
 
 ## Implementazione effettiva
 
@@ -1011,31 +1014,31 @@ Copertura: filtro cliente su schermo e report, totali filtrati, CSV incassi/paga
 - **`.gitignore`**: esclude cache Python (`__pycache__/`, `*.py[cod]`, `.pytest_cache/`, ambienti virtuali), file temporanei, log ed export dell'app (`cinofilo-dati-*.json`, `incassi_*.csv`, `pagamenti_*.csv`).
 - **`.nojekyll`**: file vuoto nella root; disabilita l'elaborazione Jekyll di Pages, appropriato per un sito statico senza directory con underscore.
 - **Nessuna modifica applicativa**: `index.html`, `styles.css` e `app.js` invariati rispetto a `HEAD`; suite di test non modificate né spostate.
-- **Nessuna pubblicazione o configurazione**: nessun commit, push, merge o tag; nessuna modifica a GitHub o GitHub Pages. Il sito live è rimasto invariato.
+- **Pubblicazione**: PR #1 mergiata con merge commit `2bdf6499091d2a010ac589c228b4fce57d52c214`; GitHub Pages ha pubblicato il commit con stato `built`; tag annotato `v1.0.0` creato su `68cdc1e` e pubblicato su `origin`. Nessuna modifica alle impostazioni GitHub/Pages.
 
 ## Test effettivi
 
-- Suite completa: **506 test superati, 0 fallimenti** (27/10/2026).
+- Suite completa rieseguita prima del merge: **506 test superati, 0 fallimenti** (27/10/2026).
 - Regressione **93/93**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **33/33**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**; tutte le suite con exit code 0.
-- `git diff --check`: exit code 0, nessun errore di whitespace.
-- `git status --short --branch`: `main...origin/main`; modificati `AGENTS.md`, `PIANO.md` e `README.md`; non tracciati `.gitignore` e `.nojekyll`.
-- `git diff --stat`: 3 file modificati; `.gitignore` e `.nojekyll` sono untracked e non compaiono nel diff stat.
-- Verifica app: `git diff --quiet HEAD -- index.html styles.css app.js` conferma che i tre file applicativi sono invariati.
-- Verifica dati: nessun file `*.json`, `*.csv`, `*.log` o `*.pyc` nel repository; nessun dato personale o export aggiunto.
-- Verifica `.gitignore`: i file applicativi non risultano ignorati; i pattern degli export e delle cache risultano attivi.
-- Verifica `.nojekyll`: file da 0 byte.
-- Verifica sito live: HTTP 200, hash SHA-256 di `index.html`, `styles.css` e `app.js` identici ai file locali; il sito è ancora alla versione stabile `68cdc1e`.
-- Verifica suite: nessun file delle suite modificato durante l'esecuzione.
+- PR #1: `MERGEABLE` e `CLEAN`, nessun controllo CI configurato, cinque file esatti; merge commit `2bdf6499091d2a010ac589c228b4fce57d52c214`.
+- GitHub Pages: build del commit `2bdf6499091d2a010ac589c228b4fce57d52c214` completata con stato `built`.
+- Sito pubblico: HTTP 200 per `index.html` (15.835 byte), `styles.css` (25.046 byte) e `app.js` (114.002 byte); titolo e home corretti.
+- Hash SHA-256 locali e di produzione identici: `index.html` `f8cc33c3d8740ab2478c738e8c87444ed4dc9dfbae092a4b697286612e59ae9c`, `styles.css` `b2e0ea12d6c9413bf9e281d6a842cc51ccaa8b0b8ecf75db5d91c43d02637cee`, `app.js` `8cdcf18573d9248068bb63d9077f53abe60ac9203828e28b5b69957cf8b3b405`.
+- Smoke test Playwright sulla produzione: navigazione Clienti, creazione cliente, ricarica con persistenza, nessun errore console/pageerror.
+- `.gitignore` e `.nojekyll` presenti in `origin/main`; `.nojekyll` è un file da 0 byte.
+- Tag annotato `v1.0.0` (oggetto `965c6fed9f24111eaf4311da7c3d17b300be66c7`) punta al commit `68cdc1e31afbbe3e9464fec497bf2d89ad18e2e2`; è stato pubblicato solo il tag.
+- `git diff --check`: exit code 0; `index.html`, `styles.css`, `app.js` e le suite non sono stati modificati.
+- `main` allineato a `origin/main` dopo il merge e dopo il commit documentale di questo aggiornamento.
 
 ## Problemi aperti / note
 
-- Il tag `v1.0.0` **non è stato creato** (vincolo della fase); la procedura è documentata e pronta per l'approvazione.
 - `main` resta non protetto, senza CI di test e con le suite fuori dal repository: sono limiti noti, non modificati in questa fase.
-- `.gitignore` e `.nojekyll` sono untracked: entreranno nel prossimo commit/PR solo dopo approvazione.
-- `.nojekyll` sarà effettivo solo al prossimo deploy Pages; in questa fase il sito non è stato pubblicato.
+- Il tag `v1.0.0` punta al commit stabile originale `68cdc1e`; i commit successivi su `main` sono solo documentali e non modificano l'app.
+- `.nojekyll` è presente nel commit pubblicato e disattiva Jekyll dal deploy `2bdf649`.
 - Nessuna modifica a `index.html`, `styles.css`, `app.js` o alle suite.
+- Il commit documentale di aggiornamento di questo piano non modifica l'app né il tag.
 
 ## Prossimo passo
 
-- Fase 17 chiusa. Per pubblicare: commit e pull request con questi file, merge su `main` solo dopo approvazione, verifica della build Pages e del sito, quindi creazione del tag `v1.0.0`. Non avviare altre fasi senza approvazione.
+- Fase 17 chiusa e pubblicata. Tag `v1.0.0` su `68cdc1e`. Non avviare altre fasi senza approvazione.
 
