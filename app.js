@@ -503,7 +503,7 @@ function initBanner() {
     hasStoredData = localStorage.getItem(STORAGE_KEY) !== null;
   } catch (e) { /* già gestito sopra */ }
   if (!hasStoredData && isDataEmpty(data)) {
-    showBanner("Nessun dato registrato. Aggiungi il primo cliente dalla sezione Clienti.", [
+    showBanner("Nessun dato registrato. Aggiungi il primo cliente dalla sezione Scheda cliente.", [
       { label: "Vai ai clienti", onClick: () => { hideBanner(); goTo("clienti"); } },
       { label: "Chiudi", onClick: hideBanner },
     ]);
@@ -672,11 +672,8 @@ function undoLast() {
 const views = document.querySelectorAll(".view");
 const VIEW_TITLES = {
   home: "Addestramento Cinofilo",
-  clienti: "Clienti · Addestramento Cinofilo",
+  clienti: "Scheda cliente · Addestramento Cinofilo",
   archivio: "Archivio · Addestramento Cinofilo",
-  pagamenti: "Pagamenti · Addestramento Cinofilo",
-  appuntamenti: "Appuntamenti · Addestramento Cinofilo",
-  pacchetti: "Pacchetti · Addestramento Cinofilo",
   resoconto: "Resoconto · Addestramento Cinofilo",
 };
 function showView(id) {
@@ -696,16 +693,11 @@ document.addEventListener("click", (e) => {
 });
 
 const FILTER_RENDERERS = {
-  "filtro-clienti": renderClienti,
-  "filtro-clienti-stato": renderClienti,
-  "filtro-archivio": renderArchivio,
-  "filtro-pagamenti": renderPagamenti,
-  "filtro-pagamenti-stato": renderPagamenti,
-  "filtro-appuntamenti": renderAppuntamenti,
-  "filtro-appuntamenti-stato": renderAppuntamenti,
-  "filtro-appuntamenti-periodo": renderAppuntamenti,
-  "filtro-pacchetti": renderPacchetti,
-  "filtro-pacchetti-stato": renderPacchetti,
+  // I filtri aggiornano solo la lista: non ridisegnano la scheda aperta,
+  // così i form in compilazione non perdono i valori.
+  "filtro-clienti": () => renderClienti(true),
+  "filtro-clienti-stato": () => renderClienti(true),
+  "filtro-archivio": () => renderArchivio(true),
 };
 function onFilterChange(e) {
   const fn = FILTER_RENDERERS[e.target.id];
@@ -716,7 +708,15 @@ document.addEventListener("change", onFilterChange);
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  const receipt = document.querySelector(".receipt-form:not([hidden])");
+  const active = document.activeElement;
+  const receipts = [...document.querySelectorAll(".receipt-form:not([hidden])")]
+    .filter(f => f.getClientRects().length);
+  const openForms = [...document.querySelectorAll(".form-panel")]
+    .filter(p => !p.hidden && p.getClientRects().length);
+  const focusedReceipt = receipts.find(f => f.contains(active));
+  const focusedForm = openForms.find(p => p.contains(active));
+  // Chiude prima il form che contiene il focus; altrimenti il primo visibile.
+  const receipt = focusedReceipt || (!focusedForm && receipts[0]);
   if (receipt) {
     const li = receipt.closest("li");
     receipt.hidden = true;
@@ -725,7 +725,9 @@ document.addEventListener("keydown", (e) => {
     if (trigger) trigger.focus();
     return;
   }
-  const openForm = [...document.querySelectorAll(".form-panel")].find(p => !p.hidden);
+  const openForm = focusedForm
+    || openForms.find(p => p.id === lastOpenedFormId)
+    || openForms[0];
   if (openForm) { toggleForm(openForm.id, false); return; }
   const detail = document.querySelector(".detail-panel:not([hidden])");
   if (detail) {
@@ -750,10 +752,17 @@ function hashView() {
   return (location.hash || "#home").slice(1);
 }
 
-/* Viste ammissibili; tutte le transizioni attraversano goTo(). */
-const KNOWN_VIEWS = ["home", "clienti", "archivio", "pagamenti", "appuntamenti", "pacchetti", "resoconto"];
+/* Viste ammissibili; tutte le transizioni attraversano goTo().
+   Le vecchie viste autonome convivono solo come alias della scheda cliente. */
+const KNOWN_VIEWS = ["home", "clienti", "archivio", "resoconto"];
+const LEGACY_VIEWS = { pagamenti: "clienti", appuntamenti: "clienti", pacchetti: "clienti" };
 
 function goTo(view) {
+  // Le vecchie sezioni ora vivono dentro la scheda cliente.
+  const requested = view;
+  const isLegacy = !!LEGACY_VIEWS[requested];
+  const isUnknown = !isLegacy && !KNOWN_VIEWS.includes(requested);
+  if (isLegacy) view = LEGACY_VIEWS[requested];
   // Convalida il nome della vista: se sconosciuta, torna alla vista iniziale.
   if (!KNOWN_VIEWS.includes(view)) view = "home";
   showView(view);
@@ -761,6 +770,10 @@ function goTo(view) {
   if (location.hash === target) {
     // URL già corretto: allinea solo lo stato, senza nuove entrature di back/forward.
     if (!history.state || history.state.view !== view) history.replaceState({ view }, "", target);
+  } else if (isLegacy || isUnknown) {
+    // Alias o hash non valido: sostituisce la voce di cronologia invece di aggiungerla,
+    // così il tasto Indietro non resta bloccato sul vecchio hash.
+    history.replaceState({ view }, "", target);
   } else {
     history.pushState({ view }, "", target);
   }
@@ -786,13 +799,6 @@ function matchesText(query, ...fields) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return true;
   return fields.some(f => String(f == null ? "" : f).toLowerCase().includes(q));
-}
-
-function addDaysIso(iso, days) {
-  const d = new Date(iso + "T00:00:00");
-  if (isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() + days);
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
 /* ===== Render clienti e archivio ===== */
@@ -935,51 +941,315 @@ function detailRow(box, title, note) {
   box.appendChild(row);
 }
 
-function renderClienteDettaglioInto(boxId, clienteId) {
-  const box = document.getElementById(boxId);
-  if (!box) return;
-  const c = clienteById(clienteId);
-  if (!c) {
-    if (boxId === "archivio-dettaglio") selectedArchivioId = 0;
-    else selectedClienteId = 0;
-    box.hidden = true;
-    box.innerHTML = "";
-    return;
-  }
-  box.hidden = false;
-  const closeAction = boxId === "archivio-dettaglio" ? "chiudi-dettaglio-archivio" : "chiudi-dettaglio";
-  box.innerHTML = `
-    <div class="detail-panel__head">
-      <h3 id="${boxId}-title" data-detail-title></h3>
-      <button type="button" class="btn-small" data-action="${closeAction}">Chiudi</button>
+/* ===== Scheda cliente gestibile (Fasi 18-23) =====
+   Pagamenti, appuntamenti e pacchetti vivono dentro la scheda del cliente.
+   I form hanno il cliente già impostato e non lo richiedono più. */
+const CARD_FORMS = {
+  pagamento: "form-cliente-pagamento",
+  appuntamento: "form-cliente-appuntamento",
+  pacchetto: "form-cliente-pacchetto",
+};
+
+function cardSectionHead(titleId, title, buttonId, buttonLabel, panelId) {
+  return `
+    <div class="card-section__head">
+      <h4 id="${titleId}">${title}</h4>
+      <button type="button" class="btn-action" id="${buttonId}" aria-controls="${panelId}" aria-expanded="false">${buttonLabel}</button>
+    </div>`;
+}
+
+function pagamentoFormHtml(clienteId) {
+  return `
+    <div id="${CARD_FORMS.pagamento}" class="form-panel" hidden>
+      <h5 data-form-title>Nuovo pagamento</h5>
+      <form data-form="pagamento" data-new-btn="cliente-btn-nuovo-pagamento">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" value="${clienteId}" />
+        <label>
+          <span>Importo contratto (€)</span>
+          <input type="number" name="importo" min="0.01" step="0.01" required />
+        </label>
+        <label>
+          <span>Data contratto</span>
+          <input type="date" name="data" required />
+        </label>
+        <label>
+          <span>Descrizione</span>
+          <input type="text" name="descrizione" autocomplete="off" />
+        </label>
+        <div data-receipt-fields>
+          <label>
+            <span>Incasso iniziale (€, opzionale)</span>
+            <input type="number" name="acconto" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Data incasso iniziale</span>
+            <input type="date" name="dataIncasso" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pagamento}">Annulla</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function appuntamentoFormHtml(clienteId) {
+  return `
+    <div id="${CARD_FORMS.appuntamento}" class="form-panel" hidden>
+      <h5 data-form-title>Nuovo appuntamento</h5>
+      <form data-form="appuntamento" data-new-btn="cliente-btn-nuovo-appuntamento">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" value="${clienteId}" />
+        <label>
+          <span>Data</span>
+          <input type="date" name="data" required />
+        </label>
+        <label>
+          <span>Ora</span>
+          <input type="time" name="ora" required />
+        </label>
+        <label>
+          <span>Tipo di lezione</span>
+          <select name="tipo" required>
+            <option value="Addestramento">Addestramento</option>
+            <option value="Esame">Esame</option>
+            <option value="Valutazione">Valutazione</option>
+            <option value="Ritiro">Ritiro</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="${CARD_FORMS.appuntamento}">Annulla</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function pacchettoFormHtml(clienteId) {
+  return `
+    <div id="${CARD_FORMS.pacchetto}" class="form-panel" hidden>
+      <h5 data-form-title>Nuovo pacchetto</h5>
+      <form data-form="pacchetto" data-new-btn="cliente-btn-nuovo-pacchetto">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" value="${clienteId}" />
+        <label>
+          <span>Numero di lezioni</span>
+          <input type="number" name="lezioni" min="1" step="1" required />
+        </label>
+        <label>
+          <span>Prezzo totale (€)</span>
+          <input type="number" name="prezzo" min="0.01" step="0.01" required />
+        </label>
+        <div data-receipt-fields>
+          <label>
+            <span>Acconto / versato (€, opzionale)</span>
+            <input type="number" name="acconto" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Data incasso acconto</span>
+            <input type="date" name="dataIncasso" />
+          </label>
+        </div>
+        <label>
+          <span>Data di acquisto</span>
+          <input type="date" name="data" required />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pacchetto}">Annulla</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function listEmpty(ul, text) {
+  const li = document.createElement("li");
+  li.className = "list-empty";
+  li.textContent = text;
+  ul.appendChild(li);
+}
+
+function pagamentoCardRow(p) {
+  const li = document.createElement("li");
+  li.className = "list-item";
+  li.dataset.id = p.id;
+  const badge = statoBadge(p);
+  const inc = totaleIncassi(p.id);
+  const saldo = saldoPagamento(p);
+  const receipts = incassiDi(p.id).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  li.innerHTML = `
+    <div class="list-item__head">
+      <span class="list-item__title"></span>
+      <span class="badge ${badge.cls}"></span>
     </div>
-    <div class="detail-panel__meta" data-detail-meta></div>
-    <div class="detail-panel__totals" data-detail-totals></div>
+    <div class="list-item__meta" data-money></div>
+    <div class="list-item__meta" data-date></div>
+    ${p.incassoDaVerificare ? '<div class="list-item__note">Incasso legacy non registrato: inserisci l\'importo effettivamente ricevuto.</div>' : ""}
+    <div class="list-item__receipts" data-receipts></div>
+    <div class="list-item__actions">
+      ${(saldo > 0 || p.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="registra-incasso">Registra incasso</button>' : ""}
+      ${(saldo > 0 && !p.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="salda-pagamento">Segna saldato</button>' : ""}
+      ${p.incassoDaVerificare ? '<button type="button" class="btn-small" data-action="nessun-incasso">Nessun incasso</button>' : ""}
+      <button type="button" class="btn-small" data-action="modifica-pagamento">Modifica</button>
+      <button type="button" class="btn-small btn-small--danger" data-action="elimina-pagamento">Elimina</button>
+    </div>
+    <form class="receipt-form" data-form="incasso" aria-label="Registra incasso" hidden>
+      <input type="hidden" name="pagamentoId" value="${p.id}" />
+      <label><span>Importo incassato (€)</span>
+        <input type="number" name="importo" min="0.01" step="0.01" max="${p.incassoDaVerificare ? p.importo : saldo}" required />
+      </label>
+      <label><span>Data incasso</span><input type="date" name="data" required /></label>
+      <label><span>Nota (opzionale)</span><input type="text" name="nota" autocomplete="off" /></label>
+      <div class="form-actions">
+        <button type="submit" class="btn-action btn-primary">Salva incasso</button>
+        <button type="button" class="btn-action" data-cancel-receipt>Annulla</button>
+      </div>
+    </form>`;
+  li.querySelector(".list-item__title").textContent = p.descrizione || "Pagamento";
+  li.querySelector(".badge").textContent = badge.txt;
+  const moneyLine = p.incassoDaVerificare
+    ? "Contratto: " + money(p.importo) + "  ·  Incassato: da verificare  ·  Saldo contrattuale: " + money(saldo)
+    : "Contratto: " + money(p.importo) + "  ·  Incassato: " + money(inc) + "  ·  Saldo: " + money(saldo);
+  li.querySelector("[data-money]").textContent = moneyLine;
+  li.querySelector("[data-date]").textContent = "Data contratto: " + (p.data ? isoToDateLabel(p.data) : "non valida");
+  const recBox = li.querySelector("[data-receipts]");
+  for (const r of receipts) {
+    const row = document.createElement("div");
+    row.className = "receipt-row";
+    row.innerHTML = `<span class="receipt-row__text"></span><button type="button" class="btn-small btn-small--danger" data-action="elimina-incasso" data-incasso-id="${r.id}">Rimuovi</button>`;
+    row.querySelector(".receipt-row__text").textContent =
+      (r.data ? isoToDateLabel(r.data) : "Data non valida") + " · " + money(r.importo) + (r.nota ? " · " + r.nota : "");
+    recBox.appendChild(row);
+  }
+  return li;
+}
+
+function appuntamentoCardRow(a) {
+  const li = document.createElement("li");
+  li.className = "list-item";
+  li.dataset.id = a.id;
+  const badge = a.fatto ? "badge--ok" : "badge--neutral";
+  li.innerHTML = `
+    <div class="list-item__head">
+      <span class="list-item__title"></span>
+      <span class="badge ${badge}"></span>
+    </div>
+    <div class="list-item__meta"></div>
+    <div class="list-item__actions">
+      ${!a.fatto ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna come fatto</button>' : ""}
+      <button type="button" class="btn-small" data-action="modifica-appuntamento">Modifica</button>
+      <button type="button" class="btn-small btn-small--danger" data-action="elimina-appuntamento">Elimina</button>
+    </div>`;
+  li.querySelector(".list-item__title").textContent =
+    (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
+  li.querySelector(".badge").textContent = a.fatto ? "Fatto" : a.tipo;
+  li.querySelector(".list-item__meta").textContent =
+    "Tipo: " + a.tipo + "  ·  Stato: " + (a.fatto ? "Fatto" : "Da fare");
+  return li;
+}
+
+function pacchettoCardRow(pk) {
+  const li = document.createElement("li");
+  li.className = "list-item";
+  li.dataset.id = pk.id;
+  const esaurito = pacchettoEsaurito(pk);
+  const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
+  const ownLinked = linked && linked.clienteId === pk.clienteId ? linked : null;
+  const inc = ownLinked ? totaleIncassi(ownLinked.id) : 0;
+  const saldo = ownLinked ? saldoPagamento(ownLinked) : 0;
+  li.innerHTML = `
+    <div class="list-item__head">
+      <span class="list-item__title"></span>
+      <span class="badge ${esaurito ? "badge--neutral" : "badge--ok"}"></span>
+    </div>
+    <div class="list-item__meta"></div>
+    <div class="list-item__meta"></div>
+    <div class="list-item__actions">
+      ${esaurito ? "" : '<button type="button" class="btn-small" data-action="consuma-lezione">Consuma lezione</button>'}
+      ${ownLinked && saldo > 0 ? '<button type="button" class="btn-small" data-action="incasso-pacchetto" data-pagamento-id="' + ownLinked.id + '">Registra incasso</button>' : ""}
+      <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica</button>
+      <button type="button" class="btn-small btn-small--danger" data-action="elimina-pacchetto">Elimina</button>
+    </div>`;
+  li.querySelector(".list-item__title").textContent = pk.lezioni + " lezioni · " + money(pk.prezzo);
+  li.querySelector(".badge").textContent = esaurito ? "Esaurito" : "Attivo";
+  const metas = li.querySelectorAll(".list-item__meta");
+  metas[0].textContent = "Utilizzate: " + pk.utilizzate + "  ·  Rimaste: " + lezioniRimanenti(pk);
+  const linkedNote = ownLinked
+    ? "  ·  Incassato: " + money(inc) + "  ·  Saldo: " + money(saldo)
+    : linked
+      ? "  ·  Pagamento collegato a un altro cliente"
+      : "  ·  Nessun pagamento collegato";
+  metas[1].textContent = "Acquisto: " + (pk.data ? isoToDateLabel(pk.data) : "—") + linkedNote;
+  return li;
+}
+
+function renderCardPagamenti(box, c) {
+  const ul = box.querySelector("#cliente-pagamenti-list");
+  const rows = clientLinks(c.id).pagamenti
+    .sort((a, b) => (b.data || "").localeCompare(a.data || "") || b.id - a.id);
+  if (!rows.length) listEmpty(ul, "Nessun pagamento.");
+  for (const p of rows) ul.appendChild(pagamentoCardRow(p));
+}
+
+function renderCardAppuntamenti(box, c) {
+  const ul = box.querySelector("#cliente-appuntamenti-list");
+  const rows = clientLinks(c.id).appuntamenti
+    .sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora) || a.id - b.id);
+  if (!rows.length) listEmpty(ul, "Nessun appuntamento.");
+  let lastDate = null;
+  for (const a of rows) {
+    if (a.data !== lastDate) {
+      lastDate = a.data;
+      const head = document.createElement("li");
+      head.className = "agenda-day";
+      const parsed = a.data ? new Date(a.data + "T00:00:00") : null;
+      head.textContent = parsed && !isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })
+        : "Data non valida";
+      ul.appendChild(head);
+    }
+    ul.appendChild(appuntamentoCardRow(a));
+  }
+}
+
+function renderCardPacchetti(box, c) {
+  const ul = box.querySelector("#cliente-pacchetti-list");
+  const rows = clientLinks(c.id).pacchetti
+    .sort((a, b) => (b.data || "").localeCompare(a.data || "") || b.id - a.id);
+  if (!rows.length) listEmpty(ul, "Nessun pacchetto.");
+  for (const pk of rows) ul.appendChild(pacchettoCardRow(pk));
+}
+
+function renderClienteGestione(box, c) {
+  box.insertAdjacentHTML("beforeend", `
+    <section class="card-section" aria-labelledby="cliente-card-pagamenti">
+      ${cardSectionHead("cliente-card-pagamenti", "Pagamenti", "cliente-btn-nuovo-pagamento", "+ Nuovo pagamento", CARD_FORMS.pagamento)}
+      ${pagamentoFormHtml(c.id)}
+      <ul id="cliente-pagamenti-list" class="list"></ul>
+    </section>
+    <section class="card-section" aria-labelledby="cliente-card-appuntamenti">
+      ${cardSectionHead("cliente-card-appuntamenti", "Appuntamenti", "cliente-btn-nuovo-appuntamento", "+ Nuovo appuntamento", CARD_FORMS.appuntamento)}
+      ${appuntamentoFormHtml(c.id)}
+      <ul id="cliente-appuntamenti-list" class="list"></ul>
+    </section>
+    <section class="card-section" aria-labelledby="cliente-card-pacchetti">
+      ${cardSectionHead("cliente-card-pacchetti", "Pacchetti", "cliente-btn-nuovo-pacchetto", "+ Nuovo pacchetto", CARD_FORMS.pacchetto)}
+      ${pacchettoFormHtml(c.id)}
+      <ul id="cliente-pacchetti-list" class="list"></ul>
+    </section>`);
+  renderCardPagamenti(box, c);
+  renderCardAppuntamenti(box, c);
+  renderCardPacchetti(box, c);
+}
+
+/* Archivio: stessa scheda, in sola consultazione. */
+function renderClienteStorico(box, links) {
+  box.insertAdjacentHTML("beforeend", `
     <h4>Pagamenti</h4><div data-detail-pagamenti></div>
     <h4>Appuntamenti</h4><div data-detail-appuntamenti></div>
-    <h4>Pacchetti</h4><div data-detail-pacchetti></div>`;
-  box.querySelector("[data-detail-title]").textContent = c.nome;
-  const meta = ["Cane: " + (c.cane || "—")];
-  if (c.razza) meta.push("Razza: " + c.razza);
-  if (c.eta) meta.push("Età: " + c.eta + " anni");
-  if (c.telefono) meta.push("Tel: " + c.telefono);
-  meta.push("Stato: " + (c.stato || "Attivo"));
-  box.querySelector("[data-detail-meta]").textContent = meta.join("  ·  ");
-
-  const links = clientLinks(c.id);
-  const contratti = links.pagamenti.reduce((s, p) => s + p.importo, 0);
-  const incassato = links.pagamenti.reduce((s, p) => s + totaleIncassi(p.id), 0);
-  const saldo = links.pagamenti.reduce((s, p) => s + saldoPagamento(p), 0);
-  const daVerificare = links.pagamenti.filter(p => p.incassoDaVerificare).length;
-  const fatti = links.appuntamenti.filter(a => a.fatto).length;
-  const rimanenti = links.pacchetti.reduce((s, pk) => s + Math.max(0, pk.lezioni - pk.utilizzate), 0);
-  box.querySelector("[data-detail-totals]").textContent =
-    "Contratti: " + money(contratti) + "  ·  Incassato: " + money(incassato)
-    + "  ·  Saldo: " + money(saldo)
-    + (daVerificare ? "  ·  Da verificare: " + daVerificare : "")
-    + "  ·  Appuntamenti: " + links.appuntamenti.length + " (" + fatti + " fatti)"
-    + "  ·  Lezioni rimaste: " + rimanenti;
-
+    <h4>Pacchetti</h4><div data-detail-pacchetti></div>`);
   const payBox = box.querySelector("[data-detail-pagamenti]");
   if (!links.pagamenti.length) payBox.textContent = "Nessun pagamento.";
   for (const p of [...links.pagamenti].sort((a, b) => (b.data || "").localeCompare(a.data || ""))) {
@@ -1002,6 +1272,123 @@ function renderClienteDettaglioInto(boxId, clienteId) {
     detailRow(pkBox,
       pk.lezioni + " lezioni · " + money(pk.prezzo) + " · acquisto " + (pk.data ? isoToDateLabel(pk.data) : "—"),
       "Utilizzate: " + pk.utilizzate + " · rimaste: " + Math.max(0, pk.lezioni - pk.utilizzate));
+  }
+}
+
+function captureOpenCardForms(box, clienteId) {
+  if (!box || box.hidden || box.dataset.clienteId !== String(clienteId)) return [];
+  return [...box.querySelectorAll(".form-panel")]
+    .filter(p => !p.hidden)
+    .map(p => {
+      const values = {};
+      const form = p.querySelector("form");
+      if (form) {
+        for (const el of form.elements) {
+          if (el.name && el.name !== "clienteId") values[el.name] = el.value;
+        }
+      }
+      const title = p.querySelector("[data-form-title]");
+      const receipt = p.querySelector("[data-receipt-fields]");
+      return {
+        id: p.id,
+        title: title ? title.textContent : "",
+        receiptHidden: receipt ? receipt.hidden : null,
+        values,
+      };
+    });
+}
+
+function restoreOpenCardForms(box, snapshot) {
+  if (!box || box.hidden || !snapshot.length) return;
+  for (const item of snapshot) {
+    const panel = box.querySelector("#" + item.id);
+    if (!panel) continue;
+    const form = panel.querySelector("form");
+    if (!form) continue;
+    const recordId = Number(item.values.id || 0);
+    if (recordId) {
+      const kind = form.dataset.form;
+      const exists = kind === "pagamento" ? data.pagamenti.some(p => p.id === recordId)
+        : kind === "appuntamento" ? data.appuntamenti.some(a => a.id === recordId)
+          : kind === "pacchetto" ? data.pacchetti.some(pk => pk.id === recordId)
+            : true;
+      if (!exists) continue;
+    }
+    panel.hidden = false;
+    const heading = panel.querySelector("[data-form-title]");
+    if (heading) {
+      if (!heading.id) heading.id = panel.id + "-title";
+      panel.setAttribute("role", "group");
+      panel.setAttribute("aria-labelledby", heading.id);
+      if (item.title) heading.textContent = item.title;
+    }
+    const receipt = panel.querySelector("[data-receipt-fields]");
+    if (receipt && item.receiptHidden !== null) receipt.hidden = item.receiptHidden;
+    for (const [name, value] of Object.entries(item.values)) {
+      const el = form.elements.namedItem(name);
+      if (!el) continue;
+      if (el.tagName === "SELECT" && ![...el.options].some(o => o.value === value)) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value;
+        el.appendChild(opt);
+      }
+      el.value = value;
+    }
+    syncFormExpanded(panel.id);
+  }
+}
+
+function renderClienteDettaglioInto(boxId, clienteId) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  // Conserva i valori dei form aperti se la scheda viene ridisegnata per lo stesso cliente.
+  const formSnapshot = boxId === "cliente-dettaglio" ? captureOpenCardForms(box, clienteId) : [];
+  const c = clienteById(clienteId);
+  if (!c) {
+    if (boxId === "archivio-dettaglio") selectedArchivioId = 0;
+    else selectedClienteId = 0;
+    box.hidden = true;
+    box.innerHTML = "";
+    delete box.dataset.clienteId;
+    return;
+  }
+  box.hidden = false;
+  box.dataset.clienteId = String(clienteId);
+  const closeAction = boxId === "archivio-dettaglio" ? "chiudi-dettaglio-archivio" : "chiudi-dettaglio";
+  box.innerHTML = `
+    <div class="detail-panel__head">
+      <h3 id="${boxId}-title" data-detail-title></h3>
+      <button type="button" class="btn-small" data-action="${closeAction}">Chiudi</button>
+    </div>
+    <div class="detail-panel__meta" data-detail-meta></div>
+    <div class="detail-panel__totals" data-detail-totals></div>`;
+  box.querySelector("[data-detail-title]").textContent = c.nome;
+  const meta = ["Cane: " + (c.cane || "—")];
+  if (c.razza) meta.push("Razza: " + c.razza);
+  if (c.eta) meta.push("Età: " + c.eta + " anni");
+  if (c.telefono) meta.push("Tel: " + c.telefono);
+  meta.push("Stato: " + (c.stato || "Attivo"));
+  box.querySelector("[data-detail-meta]").textContent = meta.join("  ·  ");
+
+  const links = clientLinks(c.id);
+  const contratti = links.pagamenti.reduce((s, p) => s + p.importo, 0);
+  const incassato = links.pagamenti.reduce((s, p) => s + totaleIncassi(p.id), 0);
+  const saldo = links.pagamenti.reduce((s, p) => s + saldoPagamento(p), 0);
+  const daVerificare = links.pagamenti.filter(p => p.incassoDaVerificare).length;
+  const fatti = links.appuntamenti.filter(a => a.fatto).length;
+  const rimanenti = links.pacchetti.reduce((s, pk) => s + Math.max(0, pk.lezioni - pk.utilizzate), 0);
+  box.querySelector("[data-detail-totals]").textContent =
+    "Contratti: " + money(contratti) + "  ·  Incassato: " + money(incassato)
+    + "  ·  Saldo: " + money(saldo)
+    + (daVerificare ? "  ·  Da verificare: " + daVerificare : "")
+    + "  ·  Appuntamenti: " + links.appuntamenti.length + " (" + fatti + " fatti)"
+    + "  ·  Lezioni rimaste: " + rimanenti;
+
+  if (boxId === "archivio-dettaglio") renderClienteStorico(box, links);
+  else {
+    renderClienteGestione(box, c);
+    restoreOpenCardForms(box, formSnapshot);
   }
 }
 
@@ -1105,7 +1492,7 @@ function fillClienteRow(li, c) {
   li.querySelector(".list-item__note").textContent = parts.join("  ·  ");
 }
 
-function renderClienti() {
+function renderClienti(skipDetail) {
   const ul = document.getElementById("clienti-list");
   ul.innerHTML = "";
   const selected = clienteById(selectedClienteId);
@@ -1153,11 +1540,11 @@ function renderClienti() {
     }
     ul.appendChild(li);
   }
-  renderClienteDettaglio();
+  if (!skipDetail) renderClienteDettaglio();
   renderOrfani();
 }
 
-function renderArchivio() {
+function renderArchivio(skipDetail) {
   const ul = document.getElementById("archivio-list");
   if (!ul) return;
   ul.innerHTML = "";
@@ -1194,7 +1581,7 @@ function renderArchivio() {
       : "Nessun cliente archiviato.";
     ul.appendChild(li);
   }
-  renderArchivioDettaglio();
+  if (!skipDetail) renderArchivioDettaglio();
   const count = document.getElementById("archivio-count");
   if (count) {
     count.textContent = String(archiviati.length);
@@ -1216,145 +1603,6 @@ function statoBadge(p) {
   return { cls: "badge--neutral", txt: "Da pagare" };
 }
 
-function renderPagamenti() {
-  const ul = document.getElementById("pagamenti-list");
-  ul.innerHTML = "";
-  const query = filterValue("filtro-pagamenti");
-  const statoFiltro = filterValue("filtro-pagamenti-stato");
-  const rows = [...data.pagamenti].filter(p => {
-    if (statoFiltro && p.stato !== statoFiltro) return false;
-    return matchesText(query, clienteNome(p.clienteId), p.descrizione, p.importo,
-      money(p.importo), p.data, isoToDateLabel(p.data), p.stato);
-  }).sort((a, b) => {
-    const ka = a.data + String(a.id).padStart(6, "0");
-    const kb = b.data + String(b.id).padStart(6, "0");
-    return ka < kb ? 1 : -1; // data decrescente, poi id decrescente
-  });
-  for (const p of rows) {
-    const li = document.createElement("li");
-    li.className = "list-item";
-    li.dataset.id = p.id;
-    const badge = statoBadge(p);
-    const inc = totaleIncassi(p.id);
-    const saldo = saldoPagamento(p);
-    const receipts = incassiDi(p.id).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
-    li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge ${badge.cls}"></span>
-      </div>
-      <div class="list-item__meta" data-money></div>
-      <div class="list-item__meta" data-date></div>
-      ${p.incassoDaVerificare ? '<div class="list-item__note">Incasso legacy non registrato: inserisci l\'importo effettivamente ricevuto.</div>' : ""}
-      <div class="list-item__receipts" data-receipts></div>
-      <div class="list-item__actions">
-        ${(saldo > 0 || p.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="registra-incasso">Registra incasso</button>' : ""}
-        ${(saldo > 0 && !p.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="salda-pagamento">Segna saldato</button>' : ""}
-        ${p.incassoDaVerificare ? '<button type="button" class="btn-small" data-action="nessun-incasso">Nessun incasso</button>' : ""}
-        <button type="button" class="btn-small" data-action="modifica-pagamento">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-pagamento">Elimina</button>
-      </div>
-      <form class="receipt-form" data-form="incasso" aria-label="Registra incasso" hidden>
-        <input type="hidden" name="pagamentoId" value="${p.id}" />
-        <label><span>Importo incassato (€)</span>
-          <input type="number" name="importo" min="0.01" step="0.01" max="${p.incassoDaVerificare ? p.importo : saldo}" required />
-        </label>
-        <label><span>Data incasso</span><input type="date" name="data" required /></label>
-        <label><span>Nota (opzionale)</span><input type="text" name="nota" autocomplete="off" /></label>
-        <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary">Salva incasso</button>
-          <button type="button" class="btn-action" data-cancel-receipt>Annulla</button>
-        </div>
-      </form>`;
-    li.querySelector(".list-item__title").textContent = clienteNome(p.clienteId);
-    li.querySelector(".badge").textContent = badge.txt;
-    const moneyLine = p.incassoDaVerificare
-      ? "Contratto: " + money(p.importo) + "  ·  Incassato: da verificare  ·  Saldo contrattuale: " + money(saldo)
-      : "Contratto: " + money(p.importo) + "  ·  Incassato: " + money(inc) + "  ·  Saldo: " + money(saldo);
-    li.querySelector("[data-money]").textContent = moneyLine + (p.descrizione ? "  ·  " + p.descrizione : "");
-    li.querySelector("[data-date]").textContent = "Data contratto: " + (p.data ? isoToDateLabel(p.data) : "non valida");
-    const recBox = li.querySelector("[data-receipts]");
-    for (const r of receipts) {
-      const row = document.createElement("div");
-      row.className = "receipt-row";
-      row.innerHTML = `<span class="receipt-row__text"></span><button type="button" class="btn-small btn-small--danger" data-action="elimina-incasso" data-incasso-id="${r.id}">Rimuovi</button>`;
-      row.querySelector(".receipt-row__text").textContent =
-        (r.data ? isoToDateLabel(r.data) : "Data non valida") + " · " + money(r.importo) + (r.nota ? " · " + r.nota : "");
-      recBox.appendChild(row);
-    }
-    ul.appendChild(li);
-  }
-  if (!ul.children.length) {
-    const li = document.createElement("li");
-    li.className = "list-empty";
-    li.textContent = data.pagamenti.length ? "Nessun pagamento corrisponde ai filtri." : "Nessun pagamento registrato.";
-    ul.appendChild(li);
-  }
-  // Aggiorna il select nei form (pagamento + appuntamento)
-  fillClienteSelects();
-}
-
-/* ===== Render appuntamenti ===== */
-function renderAppuntamenti() {
-  const ul = document.getElementById("appuntamenti-list");
-  ul.innerHTML = "";
-  const query = filterValue("filtro-appuntamenti");
-  const statoFiltro = filterValue("filtro-appuntamenti-stato");
-  const periodo = filterValue("filtro-appuntamenti-periodo");
-  const today = todayStr();
-  const end = addDaysIso(today, 6);
-  const rows = [...data.appuntamenti].filter(a => {
-    if (statoFiltro === "fatti" && !a.fatto) return false;
-    if (statoFiltro === "da-fare" && a.fatto) return false;
-    if (periodo === "oggi" && a.data !== today) return false;
-    if (periodo === "7" && (a.data < today || a.data > end)) return false;
-    if (periodo === "passati" && a.data >= today) return false;
-    return matchesText(query, clienteNome(a.clienteId), a.tipo, a.data, isoToDateLabel(a.data), a.ora);
-  }).sort((a, b) => {
-    const ka = a.data + a.ora + String(a.id);
-    const kb = b.data + b.ora + String(b.id);
-    return ka < kb ? -1 : 1;
-  });
-  let lastDate = null;
-  for (const a of rows) {
-    if (a.data !== lastDate) {
-      lastDate = a.data;
-      const head = document.createElement("li");
-      head.className = "agenda-day";
-      const parsed = a.data ? new Date(a.data + "T00:00:00") : null;
-      head.textContent = parsed && !isNaN(parsed.getTime())
-        ? parsed.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })
-        : "Data non valida";
-      ul.appendChild(head);
-    }
-    const li = document.createElement("li");
-    li.className = "list-item";
-    li.dataset.id = a.id;
-    const badge = a.fatto ? "badge--ok" : "badge--neutral";
-    const badgeTxt = a.fatto ? "Fatto" : a.tipo;
-    li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge ${badge}"></span>
-      </div>
-      <div class="list-item__meta"></div>
-      <div class="list-item__actions">
-        ${!a.fatto ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna come fatto</button>' : ""}
-        <button type="button" class="btn-small" data-action="modifica-appuntamento">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-appuntamento">Elimina</button>
-      </div>`;
-    li.querySelector(".list-item__title").textContent = (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
-    li.querySelector(".badge").textContent = badgeTxt;
-    li.querySelector(".list-item__meta").textContent = "Cliente: " + clienteNome(a.clienteId);
-    ul.appendChild(li);
-  }
-  if (!ul.children.length) {
-    const li = document.createElement("li");
-    li.className = "list-empty";
-    li.textContent = data.appuntamenti.length ? "Nessun appuntamento corrisponde ai filtri." : "Nessun appuntamento registrato.";
-    ul.appendChild(li);
-  }
-}
 
 /* ===== Render resoconto ===== */
 /* Resoconto: finestra selezionabile di 12 mesi a ritroso dal mese corrente.
@@ -1997,96 +2245,18 @@ function printReport() {
   }
 }
 
-/* ===== Render pacchetti ===== */
-function renderPacchetti() {
-  const ul = document.getElementById("pacchetti-list");
-  ul.innerHTML = "";
-  const query = filterValue("filtro-pacchetti");
-  const statoFiltro = filterValue("filtro-pacchetti-stato");
-  const rows = [...data.pacchetti].filter(pk => {
-    const esaurito = pacchettoEsaurito(pk);
-    if (statoFiltro === "attivi" && esaurito) return false;
-    if (statoFiltro === "esauriti" && !esaurito) return false;
-    const c = clienteById(pk.clienteId);
-    return matchesText(query, clienteNome(pk.clienteId), c ? c.cane : "", pk.prezzo, money(pk.prezzo),
-      pk.lezioni, pk.utilizzate, pk.data, isoToDateLabel(pk.data));
-  }).sort((a, b) => {
-    const ka = a.data + String(a.id).padStart(6, "0");
-    const kb = b.data + String(b.id).padStart(6, "0");
-    return ka < kb ? 1 : -1; // data decrescente, poi id decrescente
-  });
-  for (const pk of rows) {
-    const c = clienteById(pk.clienteId);
-    const li = document.createElement("li");
-    li.className = "list-item";
-    li.dataset.id = pk.id;
-    const esaurito = pacchettoEsaurito(pk);
-    const badge = esaurito ? "badge--neutral" : "badge--ok";
-    const badgeTxt = esaurito ? "Esaurito" : "Attivo";
-    const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
-    const inc = linked ? totaleIncassi(linked.id) : 0;
-    const saldo = linked ? saldoPagamento(linked) : 0;
-    li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge ${badge}">${badgeTxt}</span>
-      </div>
-      <div class="list-item__meta"></div>
-      <div class="list-item__meta"></div>
-      <div class="list-item__actions">
-        ${esaurito ? "" : '<button type="button" class="btn-small" data-action="consuma-lezione">Consuma lezione</button>'}
-        ${linked && saldo > 0 ? '<button type="button" class="btn-small" data-action="incasso-pacchetto" data-pagamento-id="' + linked.id + '">Registra incasso</button>' : ""}
-        <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-pacchetto">Elimina</button>
-      </div>`;
-    li.querySelector(".list-item__title").textContent = clienteNome(pk.clienteId);
-    const cane = c ? (c.cane || "—") : "—";
-    const rimaste = lezioniRimanenti(pk);
-    const metas = li.querySelectorAll(".list-item__meta");
-    metas[0].textContent = "Cane: " + cane + "  ·  Lezioni: " + pk.lezioni + "  ·  Rimaste: " + rimaste;
-    metas[1].textContent = "Prezzo: " + money(pk.prezzo)
-      + (linked ? "  ·  Incassato: " + money(inc) + "  ·  Saldo: " + money(saldo) : "  ·  Nessun pagamento collegato")
-      + "  ·  Data: " + isoToDateLabel(pk.data);
-    ul.appendChild(li);
-  }
-  if (!ul.children.length) {
-    const li = document.createElement("li");
-    li.className = "list-empty";
-    li.textContent = data.pacchetti.length ? "Nessun pacchetto corrisponde ai filtri." : "Nessun pacchetto registrato.";
-    ul.appendChild(li);
-  }
-}
 
 function refresh() {
   renderClienti();
   renderArchivio();
-  renderPagamenti();
-  renderAppuntamenti();
-  renderPacchetti();
   renderResoconto();
   renderBackupInfo();
 }
 
-/* ===== Select cliente (nei form) ===== */
-function fillClienteSelects() {
-  const selects = document.querySelectorAll("select[name=clienteId]");
-  // Il form dei pagamenti mostra tutti; quello degli appuntamenti usa la scelta corrente del pagamento
-  for (const sel of selects) {
-    const form = sel.closest("form");
-    const keep = form.dataset.keepId;
-    sel.innerHTML = "";
-    for (const c of [...data.clienti].sort((a, b) => a.nome.localeCompare(b.nome, "it"))) {
-      const opt = document.createElement("option");
-      opt.value = String(c.id);
-      opt.textContent = c.nome;
-      sel.appendChild(opt);
-    }
-    if (keep && clienteById(Number(keep))) sel.value = keep;
-  }
-}
 
 /* ===== Gestione form ===== */
-let lastFormTrigger = null;
+const formTriggers = new Map();
+let lastOpenedFormId = null;
 
 function syncFormExpanded(id) {
   const btn = document.querySelector('[aria-controls="' + id + '"]');
@@ -2094,23 +2264,33 @@ function syncFormExpanded(id) {
   if (btn && panel) btn.setAttribute("aria-expanded", String(!panel.hidden));
 }
 
+function hideFormPanel(panel) {
+  panel.hidden = true;
+  const form = panel.querySelector("form");
+  if (form) form.reset();
+  syncFormExpanded(panel.id);
+}
+
 function toggleForm(id, show, record) {
   const panel = document.getElementById(id);
   if (!panel) return;
-  panel.hidden = !show;
-  const f = panel.querySelector("form");
   if (!show) {
-    if (f) f.reset();
-    syncFormExpanded(id);
-    if (lastFormTrigger && document.contains(lastFormTrigger)) {
-      lastFormTrigger.focus();
+    const trigger = formTriggers.get(id);
+    formTriggers.delete(id);
+    hideFormPanel(panel);
+    const f = panel.querySelector("form");
+    if (trigger && document.contains(trigger)) {
+      trigger.focus();
     } else if (f) {
-      const fallback = document.getElementById("btn-nuovo-" + f.dataset.form);
+      const fallback = document.getElementById(f.dataset.newBtn || ("btn-nuovo-" + f.dataset.form));
       if (fallback) fallback.focus();
     }
     return;
   }
-  lastFormTrigger = document.activeElement;
+  panel.hidden = false;
+  lastOpenedFormId = id;
+  formTriggers.set(id, document.activeElement);
+  const f = panel.querySelector("form");
   if (!f) return;
   f.reset();
   const heading = panel.querySelector("[data-form-title]");
@@ -2129,8 +2309,6 @@ function toggleForm(id, show, record) {
   }
   const receiptFields = panel.querySelector("[data-receipt-fields]");
   if (receiptFields) receiptFields.hidden = !!record;
-  f.dataset.keepId = record && record.clienteId ? String(record.clienteId) : "";
-  fillClienteSelects();
   if (record) {
     for (const [key, value] of Object.entries(record)) {
       const el = f.elements.namedItem(key);
@@ -2157,6 +2335,11 @@ function toggleForm(id, show, record) {
   syncFormExpanded(id);
 }
 
+function closeFormPanel(form) {
+  const panel = form ? form.closest(".form-panel") : null;
+  if (panel && panel.id) toggleForm(panel.id, false);
+}
+
 function handleClick(e) {
   const cancel = e.target.closest("[data-cancel]");
   if (cancel) { toggleForm(cancel.dataset.cancel, false); return; }
@@ -2167,9 +2350,9 @@ function handleClick(e) {
     return;
   }
   if (e.target.id === "btn-nuovo-cliente") { toggleForm("form-cliente", true); return; }
-  if (e.target.id === "btn-nuovo-pagamento") { toggleForm("form-pagamento", true); return; }
-  if (e.target.id === "btn-nuovo-appuntamento") { toggleForm("form-appuntamento", true); return; }
-  if (e.target.id === "btn-nuovo-pacchetto") { toggleForm("form-pacchetto", true); return; }
+  if (e.target.id === "cliente-btn-nuovo-pagamento") { toggleForm(CARD_FORMS.pagamento, true); return; }
+  if (e.target.id === "cliente-btn-nuovo-appuntamento") { toggleForm(CARD_FORMS.appuntamento, true); return; }
+  if (e.target.id === "cliente-btn-nuovo-pacchetto") { toggleForm(CARD_FORMS.pacchetto, true); return; }
   const action = e.target.closest("[data-action]");
   if (action) {
     const holder = action.closest("[data-id]");
@@ -2243,7 +2426,7 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "modifica-pagamento") {
       const p = data.pagamenti.find(x => x.id === id);
-      if (p) toggleForm("form-pagamento", true, p);
+      if (p) toggleForm(CARD_FORMS.pagamento, true, p);
     } else if (act === "elimina-pagamento") {
       const p = data.pagamenti.find(x => x.id === id);
       if (!p) return;
@@ -2257,7 +2440,7 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "modifica-pacchetto") {
       const pk = data.pacchetti.find(x => x.id === id);
-      if (pk) toggleForm("form-pacchetto", true, pk);
+      if (pk) toggleForm(CARD_FORMS.pacchetto, true, pk);
     } else if (act === "elimina-pacchetto") {
       const plan = pacchettoDeletionPlan(id);
       if (!plan) return;
@@ -2278,9 +2461,16 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "incasso-pacchetto") {
       const pid = Number(action.dataset.pagamentoId);
-      goTo("pagamenti");
-      const btn = document.querySelector("#pagamenti-list li[data-id='" + pid + "'] [data-action=registra-incasso]");
-      if (btn) btn.click();
+      const li = document.querySelector("#cliente-pagamenti-list li[data-id='" + pid + "']");
+      const form = li ? li.querySelector("form[data-form=incasso]") : null;
+      if (!form) { setStatus("Nessun incasso da registrare per questo pacchetto.", true); return; }
+      if (form.hidden) {
+        const btn = li.querySelector("[data-action=registra-incasso]");
+        if (btn) btn.click();
+      }
+      const amount = form.querySelector("input[name=importo]");
+      if (amount) amount.focus();
+      form.scrollIntoView({ behavior: "smooth", block: "center" });
     } else if (act === "assegna-orfano") {
       const tipo = action.dataset.tipo;
       const oid = Number(action.dataset.id);
@@ -2381,7 +2571,7 @@ function handleClick(e) {
       c.stato = "Attivo";
       selectedArchivioId = 0;
       archivioTriggerId = 0;
-      if (!commit("Cliente riattivato: " + c.nome + ". È tornato in Clienti.")) { restoreUndoState(); return; }
+      if (!commit("Cliente riattivato: " + c.nome + ". È tornato tra i clienti attivi.")) { restoreUndoState(); return; }
       offerUndo();
     } else if (act === "modifica-cliente") {
       const c = clienteById(id);
@@ -2430,7 +2620,7 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "modifica-appuntamento") {
       const a = data.appuntamenti.find(x => x.id === id);
-      if (a) toggleForm("form-appuntamento", true, a);
+      if (a) toggleForm(CARD_FORMS.appuntamento, true, a);
     } else if (act === "elimina-appuntamento") {
       const a = data.appuntamenti.find(x => x.id === id);
       if (!a) return;
@@ -2513,10 +2703,10 @@ document.addEventListener("submit", (e) => {
     const descrizione = (fd.get("descrizione") || "").toString().trim();
     const acconto = Math.round((Number(fd.get("acconto")) || 0) * 100) / 100;
     let dataIncasso = (fd.get("dataIncasso") || "").toString();
-    if (!clienteId || !data_ || !(importo > 0)) { setStatus("Completa cliente, data e importo.", true); return; }
+    if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
+    if (!data_ || !(importo > 0)) { setStatus("Completa data e importo.", true); return; }
     if (!isIsoDate(data_)) { setStatus("La data del contratto non è valida.", true); return; }
     if (acconto < 0) { setStatus("L'incasso iniziale non può essere negativo.", true); return; }
-    if (!clienteById(clienteId)) { setStatus("Seleziona un cliente valido.", true); return; }
 
     if (id) {
       const p = data.pagamenti.find(x => x.id === id);
@@ -2540,7 +2730,7 @@ document.addEventListener("submit", (e) => {
       }
       p.stato = statoPagamento(p);
       if (!commit("Pagamento aggiornato: " + money(importo))) { restoreUndoState(); return; }
-      toggleForm("form-pagamento", false);
+      closeFormPanel(form);
       offerUndo();
       return;
     }
@@ -2564,7 +2754,7 @@ document.addEventListener("submit", (e) => {
       data.incassi = data.incassi.filter(i => i.pagamentoId !== row.id);
       return;
     }
-    toggleForm("form-pagamento", false);
+    closeFormPanel(form);
   }
 
   if (kind === "pacchetto") {
@@ -2576,7 +2766,7 @@ document.addEventListener("submit", (e) => {
     const acconto = Math.round(accontoRaw * 100) / 100;
     const data_ = (fd.get("data") || "").toString();
     let dataIncasso = (fd.get("dataIncasso") || "").toString();
-    if (!clienteId || !clienteById(clienteId)) { setStatus("Seleziona un cliente valido.", true); return; }
+    if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!Number.isInteger(lezioni) || lezioni < 1) { setStatus("Il numero di lezioni deve essere almeno 1.", true); return; }
     if (!(prezzo > 0)) { setStatus("Il prezzo deve essere maggiore di 0.", true); return; }
     if (acconto < 0) { setStatus("L'acconto non può essere negativo.", true); return; }
@@ -2623,7 +2813,7 @@ document.addEventListener("submit", (e) => {
         restoreUndoState();
         return;
       }
-      toggleForm("form-pacchetto", false);
+      closeFormPanel(form);
       offerUndo();
       return;
     }
@@ -2656,7 +2846,7 @@ document.addEventListener("submit", (e) => {
       data.incassi = data.incassi.filter(i => i.pagamentoId !== nuovoPagamento.id);
       return;
     }
-    toggleForm("form-pacchetto", false);
+    closeFormPanel(form);
   }
 
   if (kind === "appuntamento") {
@@ -2666,7 +2856,7 @@ document.addEventListener("submit", (e) => {
     const ora = (fd.get("ora") || "").toString();
     const tipo = (fd.get("tipo") || "").toString();
     if (!clienteId || !data_ || !ora || !tipo) { setStatus("Completa tutti i campi dell'appuntamento.", true); return; }
-    if (!clienteById(clienteId)) { setStatus("Seleziona un cliente valido.", true); return; }
+    if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!isIsoDate(data_) || !isTime(ora)) { setStatus("Data o ora non valide.", true); return; }
     const dup = data.appuntamenti.find(a => a.id !== id && a.clienteId === clienteId && a.data === data_ && a.ora === ora);
     if (dup) { setStatus("Questo cliente ha già un appuntamento in questa data e ora.", true); return; }
@@ -2681,7 +2871,7 @@ document.addEventListener("submit", (e) => {
         restoreUndoState();
         return;
       }
-      toggleForm("form-appuntamento", false);
+      closeFormPanel(form);
       offerUndo();
       return;
     }
@@ -2691,7 +2881,7 @@ document.addEventListener("submit", (e) => {
       data.appuntamenti = data.appuntamenti.filter(a => a.id !== row.id);
       return;
     }
-    toggleForm("form-appuntamento", false);
+    closeFormPanel(form);
   }
 
   if (kind === "incasso") {
@@ -2838,6 +3028,7 @@ refresh();
 // Solo replaceState: nessuna push in avvio, anche se l'hash iniziale è già valido.
 (function startup() {
   let initial = hashView();
+  if (LEGACY_VIEWS[initial]) initial = LEGACY_VIEWS[initial];
   if (!KNOWN_VIEWS.includes(initial)) initial = "home";
   showView(initial);
   history.replaceState({ view: initial }, "", "#" + initial);

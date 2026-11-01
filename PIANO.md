@@ -1042,3 +1042,58 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 
 - Fase 17 chiusa e pubblicata. Tag `v1.0.0` su `68cdc1e`. Non avviare altre fasi senza approvazione.
 
+---
+
+# Fasi 18–23 — Scheda cliente unificata (completata e verificata localmente, non pubblicata)
+
+## Richiesta approvata
+
+- Home con esattamente tre pulsanti: **Scheda cliente**, **Resoconto**, **Archivio**.
+- Gestire pagamenti, appuntamenti e pacchetti dentro ogni scheda cliente: creazione, modifica, eliminazione e azioni specifiche.
+- Rimuovere definitivamente le viste autonome Pagamenti, Appuntamenti e Pacchetti.
+- Mantenere il modello dati `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`, la persistenza `localStorage` e le funzioni esistenti.
+- Non introdurre dipendenze, backend o funzionalità extra.
+- Non pubblicare su GitHub: nessun commit, push, merge, PR o tag in questa fase.
+
+## Decisioni
+
+- Pagamenti, appuntamenti e pacchetti sono sezioni impilate nella scheda cliente, non tab separate.
+- Il cliente nei form integrati è fisso e nascosto: niente selettore cliente.
+- ID dedicati: `form-cliente-pagamento`, `form-cliente-appuntamento`, `form-cliente-pacchetto`; liste `cliente-pagamenti-list`, `cliente-appuntamenti-list`, `cliente-pacchetti-list`; pulsanti `cliente-btn-nuovo-*`.
+- L'Archivio resta in sola consultazione e riattivazione, con una scheda dedicata in sola lettura.
+- Gli hash legacy `#pagamenti`, `#appuntamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
+- Le suite Playwright sono state aggiornate ai nuovi selettori e flussi, come previsto dalla fase approvata.
+
+## Implementazione effettiva
+
+- **Home**: `index.html` mostra tre sole card (Scheda cliente, Resoconto, Archivio); la vista Clienti è intitolata "Scheda cliente". Le viste `view-pagamenti`, `view-appuntamenti` e `view-pacchetti` sono state rimosse.
+- **Navigazione**: `KNOWN_VIEWS` contiene `home`, `clienti`, `archivio`, `resoconto`; `LEGACY_VIEWS` reindirizza i vecchi hash; lo startup applica lo stesso redirect e gli alias usano `replaceState` per non bloccare il tasto Indietro.
+- **Scheda cliente**: `renderClienteGestione` crea le tre sezioni con form dedicati e liste; `renderCardPagamenti`, `renderCardAppuntamenti` e `renderCardPacchetti` mostrano solo i dati del cliente aperto. I form usano un campo `clienteId` nascosto.
+- **Azioni nella scheda**: creazione, modifica ed eliminazione di pagamenti, appuntamenti e pacchetti; consumo lezione; registrazione e rimozione incassi; saldo pagamento; incasso pacchetto che apre il form incasso nella sezione Pagamenti della stessa scheda.
+- **Archivio**: `renderClienteStorico` mostra pagamenti, appuntamenti e pacchetti in sola lettura; restano disponibili riattivazione ed eliminazione dalla lista.
+- **Rimozioni**: eliminati `renderPagamenti`, `renderAppuntamenti`, `renderPacchetti` e `fillClienteSelects`; `refresh()` non li richiama più. Rimossi i filtri globali delle tre viste.
+- **Form**: `toggleForm` usa `data-new-btn` per riportare il focus al pulsante corretto; `closeFormPanel` chiude il pannello del form dopo un salvataggio riuscito. Più form possono restare aperti; `Escape` chiude quello che contiene il focus e ogni form riporta il focus al proprio pulsante di apertura. I filtri aggiornano solo la lista; se la scheda viene ridisegnata, i valori dei form aperti vengono conservati. Titoli dei form portati a `h5` per la gerarchia delle sezioni.
+- **Stili**: aggiunte le regole `.card-section`, intestazioni, liste compatte e titoli nel pannello dettaglio, mantenendo i token del restyling; home a 3 colonne già da 48rem, con etichette ridimensionate nella fascia intermedia, per evitare una card orfana e overflow.
+- **Dati**: modello e chiavi `localStorage` invariati; export, import, snapshot e undo restano compatibili.
+
+## Test effettivi
+
+- Suite completa: **509 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **99/99**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **49/49**, Fase 14 **49/49**, Fase 16 **50/50**.
+- Modifiche alle suite: aggiunto `open_cliente` in `common.py`; aggiornati `test_regressione.py`, `test_fase7.py`, `test_fase8.py`, `test_fase9.py`, `test_fase10.py`, `test_fase11.py`, `test_fase13.py` e `test_fase16.py`; riscritta `test_fase12.py` per le sezioni della scheda e i filtri Clienti/Archivio; resi dinamici i nomi file CSV in `test_fase14.py` (dipendevano dal mese corrente).
+- Rispetto alla fase precedente: `test_regressione.py` 93 → 99, `test_fase12.py` 33 → 32, `test_fase13.py` 51 → 49. Sono stati rimossi i controlli delle viste autonome e aggiunti test per hash legacy, conservazione dei form aperti e incasso da pacchetto.
+- Smoke test locale: home a 3 pulsanti, 4 viste, redirect hash legacy, 3 sezioni nella scheda, creazione/modifica pagamento, appuntamento e pacchetto, consumo lezione, incasso da pacchetto, archivio read-only, persistenza dopo reload, `Escape`/focus, nessun overflow a 375 px e nessun errore console/pageerror.
+- `git diff --check`: exit code 0.
+
+## Problemi aperti / note
+
+- Per creare pagamenti, appuntamenti o pacchetti su un cliente archiviato bisogna prima riattivarlo: l'Archivio è in sola consultazione.
+- I form integrati usano il cliente della scheda: non è più possibile spostare un record su un altro cliente; va eliminato e ricreato nella scheda corretta.
+- Le modifiche sono nel working tree locale, non committate: `main` è ancora al commit `04652d7`.
+- Il sito pubblico non è stato aggiornato: le viste autonome restano online finché non verrà pubblicata una nuova versione.
+- I filtri globali di pagamenti, appuntamenti e pacchetti non esistono più: la ricerca resta su Clienti e Archivio.
+- Il totale dei test è passato da 506 a 509: rimossi i controlli delle viste eliminate, aggiunte coperture per hash legacy, cronologia, conservazione dei form aperti e incasso da pacchetto.
+
+## Prossimo passo / Fermo
+
+- Fase completata e verificata localmente. Non eseguire commit, push, merge o pubblicazione senza richiesta e approvazione esplicita.

@@ -21,36 +21,18 @@
     <nav class="home-grid" aria-label="Sezione principale">
       <a href="#clienti" class="home-btn" data-nav="clienti">
         <span class="home-btn__no" aria-hidden="true">01</span>
-        <span class="home-btn__label">Clienti</span>
-        <span class="home-btn__hint">Anagrafica, schede e storico</span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
-      </a>
-      <a href="#pagamenti" class="home-btn" data-nav="pagamenti">
-        <span class="home-btn__no" aria-hidden="true">02</span>
-        <span class="home-btn__label">Pagamenti</span>
-        <span class="home-btn__hint">Contratti, incassi e saldi</span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
-      </a>
-      <a href="#appuntamenti" class="home-btn" data-nav="appuntamenti">
-        <span class="home-btn__no" aria-hidden="true">03</span>
-        <span class="home-btn__label">Appuntamenti</span>
-        <span class="home-btn__hint">Agenda e lezioni svolte</span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
-      </a>
-      <a href="#pacchetti" class="home-btn" data-nav="pacchetti">
-        <span class="home-btn__no" aria-hidden="true">04</span>
-        <span class="home-btn__label">Pacchetti</span>
-        <span class="home-btn__hint">Lezioni acquistate e rimaste</span>
+        <span class="home-btn__label">Scheda cliente</span>
+        <span class="home-btn__hint">Anagrafica, pagamenti, appuntamenti e pacchetti</span>
         <span class="home-btn__arrow" aria-hidden="true">→</span>
       </a>
       <a href="#resoconto" class="home-btn" data-nav="resoconto">
-        <span class="home-btn__no" aria-hidden="true">05</span>
+        <span class="home-btn__no" aria-hidden="true">02</span>
         <span class="home-btn__label">Resoconto</span>
         <span class="home-btn__hint">Mese, report e backup</span>
         <span class="home-btn__arrow" aria-hidden="true">→</span>
       </a>
       <a href="#archivio" class="home-btn" data-nav="archivio">
-        <span class="home-btn__no" aria-hidden="true">06</span>
+        <span class="home-btn__no" aria-hidden="true">03</span>
         <span class="home-btn__label">Archivio</span>
         <span class="home-btn__hint">Clienti archiviati</span>
         <span id="archivio-count" class="home-btn__count" hidden></span>
@@ -66,7 +48,7 @@
   <main id="view-clienti" class="view is-hidden">
     <header class="section-header">
       <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Clienti</h2>
+      <h2>Scheda cliente</h2>
       <button id="btn-nuovo-cliente" class="btn-action" type="button" aria-controls="form-cliente" aria-expanded="false">+ Nuovo cliente</button>
     </header>
     <div class="filter-bar">
@@ -143,171 +125,6 @@
     </div>
     <div id="archivio-dettaglio" class="detail-panel" role="region" aria-labelledby="archivio-dettaglio-title" tabindex="-1" hidden></div>
     <ul id="archivio-list" class="list"></ul>
-  </main>
-
-  <!-- =========== PAGAMENTI =========== -->
-  <main id="view-pagamenti" class="view is-hidden">
-    <header class="section-header">
-      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Pagamenti</h2>
-      <button id="btn-nuovo-pagamento" class="btn-action" type="button" aria-controls="form-pagamento" aria-expanded="false">+ Nuovo pagamento</button>
-    </header>
-    <div class="filter-bar">
-      <input id="filtro-pagamenti" type="search" placeholder="Cerca cliente, descrizione o importo" aria-label="Cerca pagamenti" />
-      <select id="filtro-pagamenti-stato" aria-label="Filtra pagamenti per stato">
-        <option value="">Tutti gli stati</option>
-        <option value="Pagato">Pagato</option>
-        <option value="Parziale">Parziale</option>
-        <option value="Da pagare">Da pagare</option>
-        <option value="Da verificare">Da verificare</option>
-      </select>
-    </div>
-    <div id="form-pagamento" class="form-panel" hidden>
-      <h3 data-form-title>Nuovo pagamento</h3>
-      <form data-form="pagamento">
-        <input type="hidden" name="id" />
-        <label>
-          <span>Cliente</span>
-          <select name="clienteId" required></select>
-        </label>
-        <label>
-          <span>Importo contratto (€)</span>
-          <input type="number" name="importo" min="0.01" step="0.01" required />
-        </label>
-        <label>
-          <span>Data contratto</span>
-          <input type="date" name="data" required />
-        </label>
-        <label>
-          <span>Descrizione</span>
-          <input type="text" name="descrizione" autocomplete="off" />
-        </label>
-        <div data-receipt-fields>
-          <label>
-            <span>Incasso iniziale (€, opzionale)</span>
-            <input type="number" name="acconto" min="0" step="0.01" value="0" />
-          </label>
-          <label>
-            <span>Data incasso iniziale</span>
-            <input type="date" name="dataIncasso" />
-          </label>
-        </div>
-        <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary">Salva</button>
-          <button type="button" class="btn-action" data-cancel="form-pagamento">Annulla</button>
-        </div>
-      </form>
-    </div>
-    <ul id="pagamenti-list" class="list"></ul>
-  </main>
-
-  <!-- =========== APPUNTAMENTI =========== -->
-  <main id="view-appuntamenti" class="view is-hidden">
-    <header class="section-header">
-      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Appuntamenti</h2>
-      <button id="btn-nuovo-appuntamento" class="btn-action" type="button" aria-controls="form-appuntamento" aria-expanded="false">+ Nuovo appuntamento</button>
-    </header>
-    <div class="filter-bar">
-      <input id="filtro-appuntamenti" type="search" placeholder="Cerca cliente, tipo o data" aria-label="Cerca appuntamenti" />
-      <select id="filtro-appuntamenti-stato" aria-label="Filtra appuntamenti per stato">
-        <option value="">Tutti</option>
-        <option value="da-fare">Da fare</option>
-        <option value="fatti">Fatti</option>
-      </select>
-      <select id="filtro-appuntamenti-periodo" aria-label="Filtra appuntamenti per periodo">
-        <option value="">Tutte le date</option>
-        <option value="oggi">Oggi</option>
-        <option value="7">Prossimi 7 giorni</option>
-        <option value="passati">Passati</option>
-      </select>
-    </div>
-    <div id="form-appuntamento" class="form-panel" hidden>
-      <h3 data-form-title>Nuovo appuntamento</h3>
-      <form data-form="appuntamento">
-        <input type="hidden" name="id" />
-        <label>
-          <span>Cliente</span>
-          <select name="clienteId" required></select>
-        </label>
-        <label>
-          <span>Data</span>
-          <input type="date" name="data" required />
-        </label>
-        <label>
-          <span>Ora</span>
-          <input type="time" name="ora" required />
-        </label>
-        <label>
-          <span>Tipo di lezione</span>
-          <select name="tipo" required>
-            <option value="Addestramento">Addestramento</option>
-            <option value="Esame">Esame</option>
-            <option value="Valutazione">Valutazione</option>
-            <option value="Ritiro">Ritiro</option>
-          </select>
-        </label>
-        <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary">Salva</button>
-          <button type="button" class="btn-action" data-cancel="form-appuntamento">Annulla</button>
-        </div>
-      </form>
-    </div>
-    <ul id="appuntamenti-list" class="list"></ul>
-  </main>
-
-  <!-- =========== PACCHETTI =========== -->
-  <main id="view-pacchetti" class="view is-hidden">
-    <header class="section-header">
-      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Pacchetti di lezioni</h2>
-      <button id="btn-nuovo-pacchetto" class="btn-action" type="button" aria-controls="form-pacchetto" aria-expanded="false">+ Nuovo pacchetto</button>
-    </header>
-    <div class="filter-bar">
-      <input id="filtro-pacchetti" type="search" placeholder="Cerca cliente, cane o prezzo" aria-label="Cerca pacchetti" />
-      <select id="filtro-pacchetti-stato" aria-label="Filtra pacchetti per stato">
-        <option value="">Tutti</option>
-        <option value="attivi">Con lezioni disponibili</option>
-        <option value="esauriti">Esauriti</option>
-      </select>
-    </div>
-    <div id="form-pacchetto" class="form-panel" hidden>
-      <h3 data-form-title>Nuovo pacchetto</h3>
-      <form data-form="pacchetto">
-        <input type="hidden" name="id" />
-        <label>
-          <span>Cliente</span>
-          <select name="clienteId" required></select>
-        </label>
-        <label>
-          <span>Numero di lezioni</span>
-          <input type="number" name="lezioni" min="1" step="1" required />
-        </label>
-        <label>
-          <span>Prezzo totale (€)</span>
-          <input type="number" name="prezzo" min="0.01" step="0.01" required />
-        </label>
-        <div data-receipt-fields>
-          <label>
-            <span>Acconto / versato (€, opzionale)</span>
-            <input type="number" name="acconto" min="0" step="0.01" value="0" />
-          </label>
-          <label>
-            <span>Data incasso acconto</span>
-            <input type="date" name="dataIncasso" />
-          </label>
-        </div>
-        <label>
-          <span>Data di acquisto</span>
-          <input type="date" name="data" required />
-        </label>
-        <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary">Salva</button>
-          <button type="button" class="btn-action" data-cancel="form-pacchetto">Annulla</button>
-        </div>
-      </form>
-    </div>
-    <ul id="pacchetti-list" class="list"></ul>
   </main>
 
   <!-- =========== RESOCONTO =========== -->

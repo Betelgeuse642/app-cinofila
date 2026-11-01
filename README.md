@@ -13,18 +13,18 @@ Il sito è pubblico e non ha autenticazione. I dati restano nel browser dell'ute
 ## Avvio in locale
 
 1. Apri `index.html` con un browser moderno (Chrome, Edge, Firefox, Safari).
-2. Al primo avvio l'app è vuota: inizia inserendo i tuoi clienti da **Clienti**.
-3. I dati restano nel browser su quel dispositivo, nella chiave `localStorage` `cinofilo-data-v1`.
+2. Al primo avvio l'app è vuota: inizia inserendo i tuoi clienti da **Scheda cliente**.
+3. Ogni scheda cliente contiene le sezioni Pagamenti, Appuntamenti e Pacchetti; i dati restano nel browser su quel dispositivo, nella chiave `localStorage` `cinofilo-data-v1`.
 
 `file://` e l'URL GitHub Pages sono origini diverse: hanno archivi `localStorage` separati. Per trasferire i dati usa **Esporta JSON** e **Importa JSON**.
 
 ## Funzioni principali
 
-- **Clienti**: anagrafica con dati del cane, stato (Attivo/Pausa), scheda con storico di pagamenti, appuntamenti e pacchetti.
-- **Archivio**: clienti archiviati con ricerca, scheda completa, modifica, riattivazione ed eliminazione.
-- **Pagamenti**: contratti, incassi anche parziali, stati derivati `Pagato`, `Parziale`, `Da pagare`, `Da verificare`; modifica, eliminazione con annullamento.
-- **Appuntamenti**: agenda raggruppata per giorno, stato fatto/da fare, filtri per periodo.
-- **Pacchetti**: lezioni totali/consumate/rimanenti, pagamento collegato, consumazione esplicita delle lezioni; eliminazione con i pagamenti e gli incassi collegati.
+- **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); la scheda contiene e gestisce i pagamenti, gli appuntamenti e i pacchetti del cliente.
+- **Archivio**: clienti archiviati con ricerca, scheda completa in sola consultazione, riattivazione ed eliminazione.
+- **Pagamenti** (nella scheda cliente): contratti, incassi anche parziali, stati derivati `Pagato`, `Parziale`, `Da pagare`, `Da verificare`; creazione, modifica, eliminazione con annullamento e registrazione incassi.
+- **Appuntamenti** (nella scheda cliente): agenda raggruppata per giorno, stato fatto/da fare; creazione, modifica e eliminazione.
+- **Pacchetti** (nella scheda cliente): lezioni totali/consumate/rimanenti, pagamento collegato, consumazione esplicita delle lezioni; eliminazione con i pagamenti e gli incassi collegati.
 - **Resoconto**: incassato effettivo del mese, crediti residui, incidenza per cliente, trend rispetto al mese precedente; filtro per cliente.
 - **Report stampabile/PDF**: dal Resoconto, con separazione tra incassi effettivi e importi contrattuali.
 - **CSV**: esportazione di incassi e pagamenti del mese, anche filtrati per cliente.
@@ -56,7 +56,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
 ```
 
-Ultima verifica: **506 test superati, 0 fallimenti** (27/10/2026).
+Ultima verifica: **509 test superati, 0 fallimenti** (01/11/2026).
 
 ## Repository e pubblicazione
 
@@ -150,11 +150,11 @@ Se il problema riguarda il modello dati, ripristina anche il backup JSON esporta
 
 ### Versione stabile
 
-Il commit stabile attuale è `68cdc1e`. La procedura concordata per identificarlo con un tag annotato, da eseguire solo dopo approvazione, è:
+Il tag annotato `v1.0.0` è già stato creato sul commit `68cdc1e` e pubblicato. Per una nuova versione stabile, crea un tag annotato con il nuovo numero di versione solo dopo approvazione:
 
 ```bash
-git tag -a v1.0.0 68cdc1e -m "Prima versione stabile"
-git push origin v1.0.0
+git tag -a v1.1.0 <sha-del-commit> -m "Versione stabile v1.1.0"
+git push origin v1.1.0
 ```
 
 ## Limiti noti
@@ -164,6 +164,8 @@ git push origin v1.0.0
 - Il CSV pagamenti include i contratti del mese selezionato; i crediti di contratti precedenti restano nel resoconto/report.
 - Lo storico mensile dei consumi dei pacchetti non è disponibile.
 - I dialoghi di conferma sono quelli nativi del browser.
+- L'Archivio è in sola consultazione: per aggiungere pagamenti, appuntamenti o pacchetti a un cliente archiviato occorre prima riattivarlo.
+- I form della scheda lavorano sul cliente aperto: per spostare un record su un altro cliente occorre eliminarlo e ricrearlo.
 
 ## File
 

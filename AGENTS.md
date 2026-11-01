@@ -9,15 +9,16 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`.
 - Incassi separati dai contratti: stati pagamento derivati (`Pagato`, `Parziale`, `Da pagare`, `Da verificare`).
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
-- Scheda cliente con storico, archivio clienti dedicato e gestione dati orfani.
+- Scheda cliente con sezioni gestibili per pagamenti, appuntamenti e pacchetti; archivio clienti dedicato e gestione dati orfani.
+- Home con tre soli pulsanti (**Scheda cliente**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `archivio`, `resoconto`. Pagamenti, appuntamenti e pacchetti non hanno più viste autonome: gli hash legacy `#pagamenti`, `#appuntamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
 - Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto (pagamenti e incassi collegati); conferma con conteggi e avvisi, operazione annullabile.
 - Nessun dato di esempio: il primo avvio è vuoto e non viene scritto nulla automaticamente.
-- Ricerca/filtri su tutte le liste, agenda raggruppata per giorno.
+- Ricerca/filtri su Clienti e Archivio; agenda raggruppata per giorno dentro la scheda cliente.
 - Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e verificate.
-- Ultima verifica dichiarata: **506 test superati, 0 fallimenti** (27/10/2026).
+- Fasi 8–17 completate e pubblicate. Riorganizzazione della scheda cliente completata e verificata localmente, non ancora pubblicata.
+- Ultima verifica dichiarata: **509 test superati, 0 fallimenti** (01/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -49,14 +50,14 @@ Queste informazioni descrivono lo stato noto. Verifica sempre il repository prim
 Dalla cartella `/home/betelgeuse/OPENCODE_JOB/add_cinofilo-tests/`:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 test_regressione.py   # 93
+PYTHONDONTWRITEBYTECODE=1 python3 test_regressione.py   # 99
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase7.py         # 52
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase8.py         # 37
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase9.py         # 34
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase10.py        # 61
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase11.py        # 46
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 33
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 51
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 32
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py        # 50
 ```

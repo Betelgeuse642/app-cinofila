@@ -224,14 +224,15 @@ a { color: inherit; }
 
 @media (min-width: 48rem) {
   .home-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--space-m);
   }
   .home-btn { min-height: 11rem; }
+  .home-btn__label { font-size: var(--step-1); }
 }
 
 @media (min-width: 68rem) {
-  .home-grid { grid-template-columns: repeat(3, 1fr); }
+  .home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .home-btn__label { font-size: var(--step-2); }
 }
 
@@ -375,7 +376,8 @@ a { color: inherit; }
 
 .form-panel[hidden] { display: none; }
 
-.form-panel h3 {
+.form-panel h3,
+.form-panel h5 {
   font-family: var(--font-display);
   font-size: var(--step-2);
   margin-bottom: var(--space-s);
@@ -692,6 +694,54 @@ a { color: inherit; }
 .detail-panel__totals {
   font-weight: 700;
   color: var(--ink);
+}
+
+/* Sezioni gestibili dentro la scheda cliente */
+.card-section {
+  margin-top: var(--space-l);
+  padding-top: var(--space-s);
+  border-top: 1px solid var(--line);
+}
+
+.card-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  flex-wrap: wrap;
+}
+
+.card-section__head h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+}
+
+.card-section .form-panel {
+  margin-top: var(--space-s);
+  margin-bottom: var(--space-s);
+  max-width: none;
+}
+
+.detail-panel .list {
+  gap: var(--space-2xs);
+  margin-top: var(--space-s);
+}
+
+.detail-panel .list-item {
+  padding: var(--space-s);
+  box-shadow: none;
+}
+
+.detail-panel .list-item__title {
+  font-family: var(--font-text);
+  font-size: var(--step-0);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.detail-panel .agenda-day {
+  margin-top: var(--space-xs);
 }
 
 .detail-row {
