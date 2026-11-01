@@ -1190,3 +1190,64 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fasi 24–29 completate localmente. L’app è pronta per la prova locale; attendere indicazioni per commit, branch/PR e pubblicazione.
+
+---
+
+# Fasi 30–36 — Scheda a due sezioni e Appuntamenti globali (completata e verificata localmente)
+
+## Richiesta
+
+- Nella scheda cliente solo due sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**.
+- Ogni sezione con la stessa suddivisione: pacchetto/lezione, pagamenti, calendario.
+- Istruttore sul pacchetto/lezione, modificabile per ogni lezione.
+- Date delle lezioni scelte singolarmente, senza cadenza settimanale.
+- Pagamenti più modulabili: più acconti e saldo, senza rate pianificate con scadenza.
+- Nuova tab **Appuntamenti** in home con tutte le date, consultabili e modificabili.
+- Nessuna pubblicazione su GitHub.
+
+## Decisioni
+
+- `pacchetti` rappresenta sia i pacchetti sia le lezioni singole tramite `categoria: "pacchetto" | "singola"`.
+- `istruttore` sul pacchetto/lezione e su ogni appuntamento; l’appuntamento può sovrascrivere il valore predefinito.
+- Date individuali: una riga per lezione, compilabile o lasciata “da programmare”; le date mancanti si aggiungono dal calendario.
+- Pagamenti: una pratica per pacchetto/lezione, totale contrattuale e incassi liberi (Acconto 1, Acconto 2, Acconto 3, Saldo). Nessuna scadenza o rata pianificata.
+- Conflitto su data/ora: il salvataggio viene bloccato con indicazione della lezione occupata.
+- La modifica del pacchetto/lezione non rigenera il calendario.
+- L’eliminazione rimuove gli appuntamenti non svolti; quelli svolti restano nello storico senza collegamento.
+- Migrazione: appuntamenti e pagamenti senza pacchetto diventano lezioni singole; i dati orfani restano separati.
+
+## Implementazione effettiva
+
+- **Modello**: `pacchetto.categoria`, `pacchetto.istruttore`, `appuntamento.istruttore`; export `schemaVersion: 4`; normalizzazione con default sicuri.
+- **Migrazione**: alla lettura, gli appuntamenti senza `pacchettoId` vengono collegati a una lezione singola con prezzo 0; i pagamenti senza `pacchettoId` a una lezione singola con il prezzo del pagamento. Nessun importo viene inventato.
+- **Scheda**: due sezioni; ogni pacchetto/lezione è un gruppo con i tre blocchi. I gruppi mostrano tipo, istruttore, lezioni, prezzo, stato pratica, numero di lezioni programmate, incassi e calendario.
+- **Form unico**: `#form-cliente-pacchetto` serve sia i pacchetti sia le lezioni singole tramite `categoria`. Campi: tipo, istruttore, lezioni (1 fissa per la lezione singola), prezzo, data vendita, acconti iniziali multipli e righe data/ora/istruttore.
+- **Date individuali**: le righe sono generate in base al numero di lezioni; una riga vuota resta da programmare. Il riepilogo mostra “X di Y lezioni programmate” e i conflitti.
+- **Acconti**: righe iniziali dinamiche con “Aggiungi acconto”, importo, data e nota. Dopo la vendita si aggiungono altri incassi dal blocco Pagamenti. Saldo e stato sono derivati.
+- **Istruttore**: campo libero con suggerimenti; ogni riga del calendario ha il proprio istruttore; il form appuntamento permette di modificarlo.
+- **Calendario**: aggiunta, modifica, eliminazione e “Segna fatto” per ogni lezione; il pulsante “Aggiungi lezione” compare finché non sono state programmate tutte le lezioni.
+- **Vista Appuntamenti**: quarta card in home; nuova vista `#appuntamenti`, agenda globale raggruppata per giorno, ricerca e filtri per periodo, stato e categoria, modifica di data/ora/istruttore/stato, collegamento alla scheda cliente.
+- **Eliminazione**: piano pacchetto/lezione esteso agli appuntamenti; conferma con conteggi di pagamenti, incassi e appuntamenti non svolti; gli appuntamenti svolti restano con `pacchettoId: 0`. Undo completo.
+- **Accessibilità e layout**: `Escape` chiude il form attivo, focus al pulsante di apertura, form etichettati, blocchi e righe responsive a 375 px.
+- **Stili**: griglia dei tre blocchi, righe dinamiche, stato conflitto, agenda e vista Appuntamenti.
+
+## Test effettivi
+
+- Suite completa: **525 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **65/65**.
+- `test_fase30.py` copre: due sezioni, form unico, vendita con date individuali e istruttori diversi, due acconti, aggiunta lezione, conflitto, saldo, lezione singola, vista Appuntamenti con filtri e modifica, eliminazione con undo, migrazione, persistenza, export v4 e mobile.
+- Le suite esistenti sono state aggiornate alla nuova UI; i test delle vecchie viste autonome e del pagamento manuale sono stati rimossi o sostituiti. Il totale scende da 571 a 525 perché la vecchia suite della vendita (60 test) è stata sostituita da `test_fase30.py` (65 test) e alcune suite sono state riscritte sui nuovi flussi.
+- Verifica manuale: vendita pacchetto/lezione, date individuali, istruttori diversi, più acconti, conflitto, modifica, eliminazione/undo, vista Appuntamenti, filtro/ricerca, migrazione, persistenza e mobile senza overflow.
+
+## Problemi aperti / note
+
+- Non esistono rate pianificate con scadenza: gli acconti sono incassi liberi, come richiesto.
+- Non esiste un registro istruttori con disponibilità o conflitti per istruttore.
+- La modifica di un pacchetto/lezione non rigenera il calendario.
+- Il consumo delle lezioni resta manuale con “Consuma lezione”.
+- La migrazione converte i dati non collegati in lezioni singole: consigliato un backup JSON prima della prima apertura.
+- Il branch `feat/fase-30-36-scheda-due-sezioni` è locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fasi 30–36 completate e verificate localmente. L’app è pronta per la prova locale; nessuna pubblicazione su GitHub.

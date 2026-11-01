@@ -6,20 +6,20 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 ## Stato del progetto
 - Web app realizzata con HTML, CSS e JavaScript vanilla.
 - Dati salvati localmente tramite `localStorage`, chiave `cinofilo-data-v1`.
-- Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`; i pacchetti hanno `tipo`, gli appuntamenti un `pacchettoId` opzionale (0 = manuale).
+- Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`; i pacchetti hanno `categoria` (`pacchetto`/`singola`), `tipo` e `istruttore`; gli appuntamenti hanno `pacchettoId` e `istruttore`.
 - Incassi separati dai contratti: stati pagamento derivati (`Pagato`, `Parziale`, `Da pagare`, `Da verificare`).
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
-- Scheda cliente con sezioni gestibili per pagamenti, appuntamenti e pacchetti; archivio clienti dedicato e gestione dati orfani.
-- Vendita pacchetto unificata: tipo, lezioni, prezzo, acconto/saldo, anteprima calendario, creazione automatica degli appuntamenti e pratica di pagamento collegata.
-- Home con tre soli pulsanti (**Scheda cliente**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `archivio`, `resoconto`. Pagamenti, appuntamenti e pacchetti non hanno più viste autonome: gli hash legacy `#pagamenti`, `#appuntamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
-- Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto (pagamenti e incassi collegati); conferma con conteggi e avvisi, operazione annullabile.
+- Scheda cliente con due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni gruppo contiene i blocchi Pacchetto/Lezione, Pagamenti e Calendario.
+- Date delle lezioni scelte individualmente, istruttore predefinito e istruttore diverso per ogni lezione; acconti multipli registrati liberamente, senza rate pianificate o scadenze.
+- Home con quattro pulsanti (**Scheda cliente**, **Appuntamenti**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `appuntamenti`, `archivio`, `resoconto`. `#appuntamenti` è una vista reale; gli hash legacy `#pagamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
+- Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto/lezione (pagamenti, incassi e appuntamenti non svolti; quelli svolti restano senza collegamento); conferma con conteggi e avvisi, operazione annullabile.
 - Nessun dato di esempio: il primo avvio è vuoto e non viene scritto nulla automaticamente.
-- Ricerca/filtri su Clienti e Archivio; agenda raggruppata per giorno dentro la scheda cliente.
+- Ricerca/filtri su Clienti, Archivio e Appuntamenti; agenda globale raggruppata per giorno, con filtri per periodo, stato e categoria.
 - Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Fasi 18–29 completate e verificate localmente sul branch `feat/fase-24-29-vendita-pacchetto`; nessuna pubblicazione.
-- Ultima verifica dichiarata: **571 test superati, 0 fallimenti** (01/11/2026).
+- Fasi 8–17 completate e pubblicate. Fasi 18–36 completate e verificate localmente sul branch `feat/fase-30-36-scheda-due-sezioni`; nessuna pubblicazione.
+- Ultima verifica dichiarata: **525 test superati, 0 fallimenti** (01/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -46,22 +46,23 @@ Queste informazioni descrivono lo stato noto. Verifica sempre il repository prim
 - Verifica persistenza, esportazione e importazione dopo ogni modifica pertinente.
 - `saveData()` restituisce `false` in caso di errore: usa `commit(msg)` e non mascherare i fallimenti.
 - Il legacy `Parziale` senza incassi è marcato `incassoDaVerificare` ed escluso da incassi/crediti finché non viene verificato.
+- Alla prima lettura, appuntamenti e pagamenti senza `pacchettoId` vengono convertiti in lezioni singole; i dati orfani restano separati.
 
 ## Test
 Dalla cartella `/home/betelgeuse/OPENCODE_JOB/add_cinofilo-tests/`:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 test_regressione.py   # 101
+PYTHONDONTWRITEBYTECODE=1 python3 test_regressione.py   # 68
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase7.py         # 52
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase8.py         # 37
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase9.py         # 34
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase10.py        # 61
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase9.py         # 33
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase10.py        # 43
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase11.py        # 46
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 32
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 49
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 31
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 51
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py        # 50
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase25.py        # 60
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py        # 65
 ```
 
 Esegui tutte le suite dopo modifiche a modello dati, rendering, filtri, report o accessibilità, e riporta i conteggi effettivi.

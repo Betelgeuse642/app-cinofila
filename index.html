@@ -25,14 +25,20 @@
         <span class="home-btn__hint">Anagrafica, pagamenti, appuntamenti e pacchetti</span>
         <span class="home-btn__arrow" aria-hidden="true">→</span>
       </a>
-      <a href="#resoconto" class="home-btn" data-nav="resoconto">
+      <a href="#appuntamenti" class="home-btn" data-nav="appuntamenti">
         <span class="home-btn__no" aria-hidden="true">02</span>
+        <span class="home-btn__label">Appuntamenti</span>
+        <span class="home-btn__hint">Tutte le lezioni in calendario</span>
+        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      </a>
+      <a href="#resoconto" class="home-btn" data-nav="resoconto">
+        <span class="home-btn__no" aria-hidden="true">03</span>
         <span class="home-btn__label">Resoconto</span>
         <span class="home-btn__hint">Mese, report e backup</span>
         <span class="home-btn__arrow" aria-hidden="true">→</span>
       </a>
       <a href="#archivio" class="home-btn" data-nav="archivio">
-        <span class="home-btn__no" aria-hidden="true">03</span>
+        <span class="home-btn__no" aria-hidden="true">04</span>
         <span class="home-btn__label">Archivio</span>
         <span class="home-btn__hint">Clienti archiviati</span>
         <span id="archivio-count" class="home-btn__count" hidden></span>
@@ -111,6 +117,69 @@
       <p class="muted">Pagamenti, appuntamenti e pacchetti rimasti senza cliente. Assegnali a un cliente o eliminali.</p>
       <div id="orfani-list"></div>
     </section>
+  </main>
+
+  <!-- =========== APPUNTAMENTI =========== -->
+  <main id="view-appuntamenti" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Appuntamenti</h2>
+    </header>
+    <div class="filter-bar">
+      <input id="filtro-appuntamenti" type="search" placeholder="Cerca cliente, istruttore o tipo" aria-label="Cerca appuntamenti" />
+      <select id="filtro-appuntamenti-stato" aria-label="Filtra appuntamenti per stato">
+        <option value="">Tutti gli stati</option>
+        <option value="da-fare">Da fare</option>
+        <option value="fatti">Fatti</option>
+      </select>
+      <select id="filtro-appuntamenti-periodo" aria-label="Filtra appuntamenti per periodo">
+        <option value="">Tutte le date</option>
+        <option value="oggi">Oggi</option>
+        <option value="7">Prossimi 7 giorni</option>
+        <option value="passati">Passati</option>
+      </select>
+      <select id="filtro-appuntamenti-categoria" aria-label="Filtra appuntamenti per tipo">
+        <option value="">Pacchetti e lezioni singole</option>
+        <option value="pacchetto">Solo pacchetti</option>
+        <option value="singola">Solo lezioni singole</option>
+      </select>
+    </div>
+    <div id="form-appuntamento" class="form-panel" hidden>
+      <h5 data-form-title>Modifica lezione</h5>
+      <form data-form="appuntamento">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" />
+        <input type="hidden" name="pacchettoId" />
+        <p class="form-hint" data-appuntamento-info></p>
+        <label>
+          <span>Data</span>
+          <input type="date" name="data" required />
+        </label>
+        <label>
+          <span>Ora</span>
+          <input type="time" name="ora" required />
+        </label>
+        <label>
+          <span>Tipo di lezione</span>
+          <select name="tipo" required>
+            <option value="Addestramento">Addestramento</option>
+            <option value="Esame">Esame</option>
+            <option value="Valutazione">Valutazione</option>
+            <option value="Ritiro">Ritiro</option>
+          </select>
+        </label>
+        <label>
+          <span>Istruttore</span>
+          <input type="text" name="istruttore" list="istruttori-globali" maxlength="60" autocomplete="off" />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="form-appuntamento">Annulla</button>
+        </div>
+      </form>
+    </div>
+    <datalist id="istruttori-globali"></datalist>
+    <ul id="appuntamenti-list" class="list"></ul>
   </main>
 
   <!-- =========== ARCHIVIO =========== -->
