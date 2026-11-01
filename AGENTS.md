@@ -10,6 +10,7 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Incassi separati dai contratti: stati pagamento derivati (`Pagato`, `Parziale`, `Da pagare`, `Da verificare`).
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
 - Scheda cliente con sezioni gestibili per pagamenti, appuntamenti e pacchetti; archivio clienti dedicato e gestione dati orfani.
+- Vendita pacchetto unificata: tipo, lezioni, prezzo, acconto/saldo, anteprima calendario, creazione automatica degli appuntamenti e pratica di pagamento collegata.
 - Home con tre soli pulsanti (**Scheda cliente**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `archivio`, `resoconto`. Pagamenti, appuntamenti e pacchetti non hanno più viste autonome: gli hash legacy `#pagamenti`, `#appuntamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
 - Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto (pagamenti e incassi collegati); conferma con conteggi e avvisi, operazione annullabile.
 - Nessun dato di esempio: il primo avvio è vuoto e non viene scritto nulla automaticamente.
@@ -17,8 +18,8 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Riorganizzazione della scheda cliente (Fasi 18–23) completata e verificata localmente. Fase 24 (modello dati per la vendita pacchetto) completata localmente; nessuna pubblicazione.
-- Ultima verifica dichiarata: **511 test superati, 0 fallimenti** (01/11/2026).
+- Fasi 8–17 completate e pubblicate. Fasi 18–29 completate e verificate localmente sul branch `feat/fase-24-29-vendita-pacchetto`; nessuna pubblicazione.
+- Ultima verifica dichiarata: **571 test superati, 0 fallimenti** (01/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -60,6 +61,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 32
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py        # 50
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase25.py        # 60
 ```
 
 Esegui tutte le suite dopo modifiche a modello dati, rendering, filtri, report o accessibilità, e riporta i conteggi effettivi.

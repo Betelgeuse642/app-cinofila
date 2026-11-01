@@ -1136,3 +1136,57 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase 24 completata. Attendere approvazione prima di avviare la Fase 25 (form unico “Vendi pacchetto” e pratica di pagamento).
+
+---
+
+# Fasi 25–29 — Vendita pacchetto unificata (completata e verificata localmente)
+
+## Richiesta
+
+- Integrare in un unico flusso la vendita del pacchetto, la programmazione degli appuntamenti e la pratica di pagamento.
+- Registrare il tipo di pacchetto, creare automaticamente gli eventi e generare un pagamento collegato con acconto e saldo.
+- Non pubblicare: solo verifica locale.
+
+## Decisioni
+
+- Un unico form “Vendi pacchetto” nella scheda cliente, con tre blocchi: Pacchetto, Pratica di pagamento, Calendario.
+- Tipo di pacchetto libero, con suggerimenti dai tipi già usati; se vuoto viene mostrato “Pacchetto”.
+- La pratica è il pagamento collegato tramite `pacchettoId`; nessuna nuova entità.
+- Programmazione automatica attiva di default ma disattivabile.
+- Un appuntamento per ogni lezione, cadenza di 7 o 14 giorni, data/ora e tipo lezione scelti.
+- Anteprima live delle date e dei conflitti; la vendita è bloccata se una data è occupata.
+- La modifica del pacchetto non rigenera il calendario.
+- L’eliminazione del pacchetto rimuove gli appuntamenti non svolti; quelli svolti restano nello storico senza collegamento.
+- Il consumo delle lezioni resta manuale.
+
+## Implementazione effettiva
+
+- **Form unico**: `pacchettoFormHtml` ora contiene i tre blocchi, il campo `tipo`, l’anteprima del calendario e il riepilogo acconto/saldo.
+- **Anteprima**: `renderPacchettoPreview`, `scheduleDates` e `scheduleConflicts` calcolano le date, mostrano “Libero/Occupato” e aggiornano il riepilogo della pratica. I campi del calendario si nascondono se la programmazione è disattivata.
+- **Creazione atomica**: il submit crea pacchetto, pagamento, incasso dell’acconto e appuntamenti in un’unica operazione con `rememberUndo`; se `commit` fallisce, `restoreUndoState` ripristina lo stato precedente. Dopo il salvataggio il banner permette di annullare tutto.
+- **Vincoli**: tipo massimo 60 caratteri; lezioni ≥ 1; prezzo > 0; acconto ≥ 0 e non superiore al prezzo; data vendita e prima lezione valide; ora valida; cadenza 7/14; conflitto globale su data e ora.
+- **Pratica**: descrizione `Pacchetto <tipo> · N lezioni`; l’acconto genera un incasso con nota `Acconto Pacchetto <tipo>`; lo stato è derivato (`Da pagare`, `Parziale`, `Pagato`).
+- **Visualizzazione**: la riga pacchetto mostra tipo, stato, incassato/saldo e numero di appuntamenti; gli appuntamenti mostrano il pacchetto collegato; il pagamento mostra la descrizione della pratica. L’Archivio mostra gli stessi dati in sola lettura.
+- **Modifica**: il form nasconde il calendario e i campi acconto; il riepilogo mostra la pratica corrente. Tipo, lezioni, prezzo e data aggiornano pacchetto e pagamento collegato, senza toccare gli appuntamenti.
+- **Eliminazione**: `pacchettoDeletionPlan` include gli appuntamenti; la conferma indica quanti non svolti verranno eliminati e quanti svolti resteranno nello storico. `deletePacchettoCascade` rimuove i non svolti e azzera `pacchettoId` sugli svolti.
+- **Compatibilità**: modello dati esteso con `pacchetto.tipo` e `appuntamento.pacchettoId`; export `schemaVersion: 3`; import dei backup precedenti con default sicuri.
+- **Stili**: blocchi form, checkbox, riepilogo e anteprima calendario con evidenza dei conflitti; layout verificato a 375 px.
+
+## Test effettivi
+
+- Suite completa: **571 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **101/101**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **49/49**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 25 **60/60**.
+- `test_fase25.py` copre: form e default, anteprima, vendita completa, date settimanali/quindicinali, conflitto e blocco, vendita senza calendario, acconto zero/pieno/parziale, incasso del saldo, modifica senza rigenerare il calendario, eliminazione con appuntamenti svolti/non svolti, undo, persistenza, conservazione dello stato del form, export e mobile.
+- Le suite esistenti creano pacchetti con programmazione disattivata per restare deterministiche; la nuova suite copre il flusso automatico.
+
+## Problemi aperti / note
+
+- La modifica di un pacchetto non rigenera il calendario; per cambiare le date si modificano gli appuntamenti nella sezione Appuntamenti.
+- La vendita si blocca in caso di conflitto; non c’è uno spostamento automatico delle date.
+- Il consumo delle lezioni resta manuale.
+- Non esiste un catalogo di tipi con lezioni/prezzo predefiniti.
+- Modifiche locali sul branch `feat/fase-24-29-vendita-pacchetto`; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fasi 24–29 completate localmente. L’app è pronta per la prova locale; attendere indicazioni per commit, branch/PR e pubblicazione.

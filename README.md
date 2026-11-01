@@ -22,9 +22,9 @@ Il sito è pubblico e non ha autenticazione. I dati restano nel browser dell'ute
 
 - **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); la scheda contiene e gestisce i pagamenti, gli appuntamenti e i pacchetti del cliente.
 - **Archivio**: clienti archiviati con ricerca, scheda completa in sola consultazione, riattivazione ed eliminazione.
-- **Pagamenti** (nella scheda cliente): contratti, incassi anche parziali, stati derivati `Pagato`, `Parziale`, `Da pagare`, `Da verificare`; creazione, modifica, eliminazione con annullamento e registrazione incassi.
-- **Appuntamenti** (nella scheda cliente): agenda raggruppata per giorno, stato fatto/da fare; creazione, modifica e eliminazione.
-- **Pacchetti** (nella scheda cliente): lezioni totali/consumate/rimanenti, pagamento collegato, consumazione esplicita delle lezioni; eliminazione con i pagamenti e gli incassi collegati.
+- **Pagamenti** (nella scheda cliente): contratti e pratiche dei pacchetti, incassi anche parziali, stati derivati `Pagato`, `Parziale`, `Da pagare`, `Da verificare`; creazione, modifica, eliminazione con annullamento e registrazione incassi.
+- **Appuntamenti** (nella scheda cliente): agenda raggruppata per giorno, stato fatto/da fare, collegamento al pacchetto; creazione manuale o automatica dalla vendita, modifica e eliminazione.
+- **Pacchetti** (nella scheda cliente): vendita guidata con tipo, lezioni, prezzo, acconto e saldo; anteprima del calendario e creazione automatica degli appuntamenti; pagamento collegato; lezioni totali/consumate/rimanenti; eliminazione con pagamenti, incassi e appuntamenti non svolti collegati.
 - **Resoconto**: incassato effettivo del mese, crediti residui, incidenza per cliente, trend rispetto al mese precedente; filtro per cliente.
 - **Report stampabile/PDF**: dal Resoconto, con separazione tra incassi effettivi e importi contrattuali.
 - **CSV**: esportazione di incassi e pagamenti del mese, anche filtrati per cliente.
@@ -54,9 +54,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase25.py
 ```
 
-Ultima verifica: **511 test superati, 0 fallimenti** (01/11/2026).
+Ultima verifica: **571 test superati, 0 fallimenti** (01/11/2026).
 
 ## Repository e pubblicazione
 
@@ -163,6 +164,10 @@ git push origin v1.1.0
 - Il Resoconto e i CSV usano un periodo mensile; non è disponibile un intervallo di date personalizzato.
 - Il CSV pagamenti include i contratti del mese selezionato; i crediti di contratti precedenti restano nel resoconto/report.
 - Lo storico mensile dei consumi dei pacchetti non è disponibile.
+- La modifica di un pacchetto non rigenera il calendario: gli appuntamenti già creati restano invariati.
+- La vendita automatica si blocca se una delle date generate è già occupata; non c'è uno spostamento automatico.
+- Il consumo delle lezioni resta manuale con “Consuma lezione”; non viene incrementato automaticamente segnando un appuntamento come fatto.
+- Il tipo di pacchetto è facoltativo: se vuoto viene mostrato come “Pacchetto”.
 - I dialoghi di conferma sono quelli nativi del browser.
 - L'Archivio è in sola consultazione: per aggiungere pagamenti, appuntamenti o pacchetti a un cliente archiviato occorre prima riattivarlo.
 - I form della scheda lavorano sul cliente aperto: per spostare un record su un altro cliente occorre eliminarlo e ricrearlo.

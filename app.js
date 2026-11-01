@@ -704,6 +704,8 @@ const FILTER_RENDERERS = {
 function onFilterChange(e) {
   const fn = FILTER_RENDERERS[e.target.id];
   if (fn) fn();
+  const panel = e.target.closest("#form-cliente-pacchetto");
+  if (panel) renderPacchettoPreview(panel);
 }
 document.addEventListener("input", onFilterChange);
 document.addEventListener("change", onFilterChange);
@@ -871,12 +873,19 @@ function pacchettoDeletionPlan(id) {
   const pagamenti = data.pagamenti.filter(p => p.pacchettoId === id);
   const pagamentoIds = new Set(pagamenti.map(p => p.id));
   const incassi = data.incassi.filter(i => pagamentoIds.has(i.pagamentoId));
+  const appuntamenti = data.appuntamenti.filter(a => a.pacchettoId === id);
+  const appuntamentiDaEliminare = appuntamenti.filter(a => !a.fatto);
+  const appuntamentiSvolti = appuntamenti.filter(a => a.fatto);
   const warnings = [];
   if (!pagamenti.length) {
     warnings.push("Nessun pagamento collegato a questo pacchetto.");
   }
   if (pagamenti.length > 1) {
     warnings.push("Sono presenti " + pagamenti.length + " pagamenti collegati allo stesso pacchetto: verranno eliminati tutti.");
+  }
+  if (appuntamentiSvolti.length) {
+    warnings.push(countLabel(appuntamentiSvolti.length, "appuntamento svolto resterà", "appuntamenti svolti resteranno")
+      + " nello storico senza collegamento al pacchetto.");
   }
   const saldo = pagamenti.reduce((s, p) => s + (p.incassoDaVerificare ? 0 : saldoPagamento(p)), 0);
   if (saldo > 0.005) {
@@ -887,7 +896,11 @@ function pacchettoDeletionPlan(id) {
     warnings.push(countLabel(daVerificare.length, "pagamento ha", "pagamenti hanno") + " un incasso legacy da verificare.");
   }
   const incassato = incassi.reduce((s, i) => s + i.importo, 0);
-  return { pacchetto: pk, pagamenti, incassi, warnings, saldo, incassato };
+  return {
+    pacchetto: pk, pagamenti, incassi, appuntamenti,
+    appuntamentiDaEliminare, appuntamentiSvolti,
+    warnings, saldo, incassato,
+  };
 }
 
 function deletionLines(items) {
@@ -927,9 +940,14 @@ function deleteClienteCascade(plan) {
 function deletePacchettoCascade(plan) {
   const id = plan.pacchetto.id;
   const pagamentoIds = new Set(plan.pagamenti.map(p => p.id));
+  const appuntamentoIds = new Set(plan.appuntamentiDaEliminare.map(a => a.id));
   data.pacchetti = data.pacchetti.filter(pk => pk.id !== id);
   data.pagamenti = data.pagamenti.filter(p => !pagamentoIds.has(p.id));
   data.incassi = data.incassi.filter(i => !pagamentoIds.has(i.pagamentoId));
+  data.appuntamenti = data.appuntamenti.filter(a => !appuntamentoIds.has(a.id));
+  for (const a of data.appuntamenti) {
+    if (a.pacchettoId === id) a.pacchettoId = 0;
+  }
 }
 
 function detailRow(box, title, note) {
@@ -951,6 +969,48 @@ const CARD_FORMS = {
   appuntamento: "form-cliente-appuntamento",
   pacchetto: "form-cliente-pacchetto",
 };
+
+function pacchettoLabel(tipo) {
+  const t = (tipo || "").trim();
+  return !t || t.toLowerCase() === "pacchetto" ? "Pacchetto" : "Pacchetto " + t;
+}
+
+function pacchettoDescrizione(tipo, lezioni) {
+  const t = (tipo || "").trim();
+  return (!t || t.toLowerCase() === "pacchetto" ? "Pacchetto " : "Pacchetto " + t + " · ") + lezioni + " lezioni";
+}
+
+function isoFromDate(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function scheduleDates(startIso, count, days) {
+  if (!isIsoDate(startIso) || !Number.isInteger(count) || count < 1 ||
+      !Number.isInteger(days) || days < 1) return [];
+  const d = new Date(startIso + "T00:00:00");
+  if (isNaN(d.getTime())) return [];
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    out.push(isoFromDate(d));
+    d.setDate(d.getDate() + days);
+  }
+  return out;
+}
+
+function scheduleConflicts(dates, ora) {
+  const conflicts = [];
+  for (const date of dates) {
+    const existing = data.appuntamenti.find(a => a.data === date && a.ora === ora);
+    if (existing) conflicts.push({ data: date, ora, clienteId: existing.clienteId });
+  }
+  return conflicts;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
 
 function cardSectionHead(titleId, title, buttonId, buttonLabel, panelId) {
   return `
@@ -1032,38 +1092,173 @@ function appuntamentoFormHtml(clienteId) {
 function pacchettoFormHtml(clienteId) {
   return `
     <div id="${CARD_FORMS.pacchetto}" class="form-panel" hidden>
-      <h5 data-form-title>Nuovo pacchetto</h5>
+      <h5 data-form-title>Vendi pacchetto</h5>
       <form data-form="pacchetto" data-new-btn="cliente-btn-nuovo-pacchetto">
         <input type="hidden" name="id" />
         <input type="hidden" name="clienteId" value="${clienteId}" />
-        <label>
-          <span>Numero di lezioni</span>
-          <input type="number" name="lezioni" min="1" step="1" required />
-        </label>
-        <label>
-          <span>Prezzo totale (€)</span>
-          <input type="number" name="prezzo" min="0.01" step="0.01" required />
-        </label>
-        <div data-receipt-fields>
+        <fieldset class="form-block">
+          <legend>Pacchetto</legend>
           <label>
-            <span>Acconto / versato (€, opzionale)</span>
-            <input type="number" name="acconto" min="0" step="0.01" value="0" />
+            <span>Tipo di pacchetto</span>
+            <input type="text" name="tipo" list="tipi-pacchetto" maxlength="60" autocomplete="off"
+                   placeholder="Es. Base, Puppy, Recupero" />
+            <datalist id="tipi-pacchetto"></datalist>
           </label>
           <label>
-            <span>Data incasso acconto</span>
-            <input type="date" name="dataIncasso" />
+            <span>Numero di lezioni</span>
+            <input type="number" name="lezioni" min="1" step="1" required />
           </label>
-        </div>
-        <label>
-          <span>Data di acquisto</span>
-          <input type="date" name="data" required />
-        </label>
+          <label>
+            <span>Prezzo totale (€)</span>
+            <input type="number" name="prezzo" min="0.01" step="0.01" required />
+          </label>
+          <label>
+            <span>Data di vendita</span>
+            <input type="date" name="data" required />
+          </label>
+        </fieldset>
+        <fieldset class="form-block">
+          <legend>Pratica di pagamento</legend>
+          <div data-receipt-fields>
+            <label>
+              <span>Acconto / versato (€, opzionale)</span>
+              <input type="number" name="acconto" min="0" step="0.01" value="0" />
+            </label>
+            <label>
+              <span>Data incasso acconto</span>
+              <input type="date" name="dataIncasso" />
+            </label>
+          </div>
+          <p class="form-hint" data-payment-summary>Il saldo verrà calcolato al salvataggio.</p>
+        </fieldset>
+        <fieldset class="form-block" data-schedule-fields>
+          <legend>Calendario</legend>
+          <label class="checkbox-row">
+            <input type="checkbox" name="programma" checked />
+            <span>Programma automaticamente le lezioni</span>
+          </label>
+          <div data-schedule-controls>
+            <label>
+              <span>Prima lezione</span>
+              <input type="date" name="primaLezione" />
+            </label>
+            <label>
+              <span>Ora</span>
+              <input type="time" name="ora" value="09:00" />
+            </label>
+            <label>
+              <span>Cadenza</span>
+              <select name="cadenza">
+                <option value="7">Ogni settimana</option>
+                <option value="14">Ogni 2 settimane</option>
+              </select>
+            </label>
+            <label>
+              <span>Tipo lezione</span>
+              <select name="tipoLezione">
+                <option value="Addestramento">Addestramento</option>
+                <option value="Esame">Esame</option>
+                <option value="Valutazione">Valutazione</option>
+                <option value="Ritiro">Ritiro</option>
+              </select>
+            </label>
+          </div>
+          <div data-schedule-preview class="schedule-preview" aria-live="polite"></div>
+        </fieldset>
         <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="submit" class="btn-action btn-primary">Vendi pacchetto</button>
           <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pacchetto}">Annulla</button>
         </div>
       </form>
     </div>`;
+}
+
+function fillPacchettoTipoDatalist(box) {
+  const list = box ? box.querySelector("#tipi-pacchetto") : null;
+  if (!list) return;
+  list.innerHTML = "";
+  const types = [...new Set(data.pacchetti.map(pk => (pk.tipo || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "it"));
+  for (const t of types) {
+    const opt = document.createElement("option");
+    opt.value = t;
+    list.appendChild(opt);
+  }
+}
+
+function renderPacchettoPreview(panel) {
+  if (!panel) return;
+  const form = panel.querySelector("form");
+  if (!form) return;
+  const el = name => form.elements.namedItem(name);
+  const id = Number(el("id") ? el("id").value : 0);
+  const summary = panel.querySelector("[data-payment-summary]");
+
+  if (id) {
+    const pk = data.pacchetti.find(x => x.id === id);
+    const linked = pk ? data.pagamenti.find(p => p.pacchettoId === pk.id) : null;
+    if (summary) {
+      summary.textContent = linked
+        ? "Pratica attuale: incassato " + money(totaleIncassi(linked.id)) + " · saldo " +
+          money(saldoPagamento(linked)) + ". Usa Registra incasso per gli aggiornamenti."
+        : "Nessun pagamento collegato a questo pacchetto.";
+    }
+    return;
+  }
+
+  const lezioni = Number(el("lezioni") ? el("lezioni").value : 0);
+  const prezzo = Number(el("prezzo") ? el("prezzo").value : 0);
+  const acconto = Number(el("acconto") ? el("acconto").value : 0) || 0;
+  if (summary) {
+    if (acconto > prezzo && prezzo > 0) {
+      summary.textContent = "L'acconto supera il prezzo totale.";
+    } else if (prezzo > 0) {
+      const saldo = Math.max(0, Math.round((prezzo - Math.max(acconto, 0)) * 100) / 100);
+      summary.textContent = "Acconto: " + money(Math.max(acconto, 0)) + " · Saldo: " + money(saldo);
+    } else {
+      summary.textContent = "Il saldo verrà calcolato al salvataggio.";
+    }
+  }
+
+  const preview = panel.querySelector("[data-schedule-preview]");
+  if (!preview) return;
+  const programmaEl = el("programma");
+  const programma = !!(programmaEl && programmaEl.checked);
+  const controls = panel.querySelector("[data-schedule-controls]");
+  if (controls) controls.hidden = !programma;
+  if (!programma) {
+    preview.textContent = "Programmazione automatica disattivata: il pacchetto sarà salvato senza appuntamenti.";
+    preview.classList.remove("has-conflicts");
+    return;
+  }
+
+  const prima = el("primaLezione") ? el("primaLezione").value : "";
+  const ora = el("ora") ? el("ora").value : "";
+  const cadenza = Number(el("cadenza") ? el("cadenza").value : 7) || 7;
+  const tipoLezione = el("tipoLezione") ? el("tipoLezione").value : "Addestramento";
+  if (!Number.isInteger(lezioni) || lezioni < 1 || !isIsoDate(prima) || !isTime(ora)) {
+    preview.textContent = "Inserisci lezioni, prima lezione e ora per vedere le date.";
+    preview.classList.remove("has-conflicts");
+    return;
+  }
+  const dates = scheduleDates(prima, lezioni, cadenza);
+  if (dates.length !== lezioni) {
+    preview.textContent = "Impossibile calcolare le date: controlla i dati.";
+    preview.classList.remove("has-conflicts");
+    return;
+  }
+  const conflicts = scheduleConflicts(dates, ora);
+  const conflictDates = new Set(conflicts.map(c => c.data));
+  const rows = dates.map(d => {
+    const bad = conflictDates.has(d);
+    return `<li class="${bad ? "is-conflict" : ""}"><span>${isoToDateLabel(d)} · ${ora}</span>` +
+      `<span>${bad ? "Occupato" : "Libero"}</span></li>`;
+  });
+  preview.innerHTML = `
+    <p class="schedule-preview__summary">${lezioni} appuntamenti · dal ${isoToDateLabel(dates[0])} al ${isoToDateLabel(dates[dates.length - 1])} · ${escapeHtml(tipoLezione)}</p>
+    <ol class="schedule-preview__list">${rows.join("")}</ol>
+    ${conflicts.length ? `<p class="schedule-preview__warning">${conflicts.length === 1 ? "1 data occupata" : conflicts.length + " date occupate"}: cambia data, ora o cadenza.</p>` : ""}`;
+  preview.classList.toggle("has-conflicts", conflicts.length > 0);
 }
 
 function listEmpty(ul, text) {
@@ -1133,6 +1328,7 @@ function appuntamentoCardRow(a) {
   li.className = "list-item";
   li.dataset.id = a.id;
   const badge = a.fatto ? "badge--ok" : "badge--neutral";
+  const linkedPk = a.pacchettoId ? data.pacchetti.find(pk => pk.id === a.pacchettoId) : null;
   li.innerHTML = `
     <div class="list-item__head">
       <span class="list-item__title"></span>
@@ -1148,7 +1344,8 @@ function appuntamentoCardRow(a) {
     (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
   li.querySelector(".badge").textContent = a.fatto ? "Fatto" : a.tipo;
   li.querySelector(".list-item__meta").textContent =
-    "Tipo: " + a.tipo + "  ·  Stato: " + (a.fatto ? "Fatto" : "Da fare");
+    "Tipo: " + a.tipo + "  ·  Stato: " + (a.fatto ? "Fatto" : "Da fare") +
+    (linkedPk ? "  ·  " + pacchettoLabel(linkedPk.tipo) : "");
   return li;
 }
 
@@ -1161,6 +1358,7 @@ function pacchettoCardRow(pk) {
   const ownLinked = linked && linked.clienteId === pk.clienteId ? linked : null;
   const inc = ownLinked ? totaleIncassi(ownLinked.id) : 0;
   const saldo = ownLinked ? saldoPagamento(ownLinked) : 0;
+  const linkedApps = data.appuntamenti.filter(a => a.pacchettoId === pk.id);
   li.innerHTML = `
     <div class="list-item__head">
       <span class="list-item__title"></span>
@@ -1174,7 +1372,8 @@ function pacchettoCardRow(pk) {
       <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica</button>
       <button type="button" class="btn-small btn-small--danger" data-action="elimina-pacchetto">Elimina</button>
     </div>`;
-  li.querySelector(".list-item__title").textContent = pk.lezioni + " lezioni · " + money(pk.prezzo);
+  li.querySelector(".list-item__title").textContent =
+    pacchettoLabel(pk.tipo) + " · " + pk.lezioni + " lezioni · " + money(pk.prezzo);
   li.querySelector(".badge").textContent = esaurito ? "Esaurito" : "Attivo";
   const metas = li.querySelectorAll(".list-item__meta");
   metas[0].textContent = "Utilizzate: " + pk.utilizzate + "  ·  Rimaste: " + lezioniRimanenti(pk);
@@ -1183,7 +1382,8 @@ function pacchettoCardRow(pk) {
     : linked
       ? "  ·  Pagamento collegato a un altro cliente"
       : "  ·  Nessun pagamento collegato";
-  metas[1].textContent = "Acquisto: " + (pk.data ? isoToDateLabel(pk.data) : "—") + linkedNote;
+  metas[1].textContent = "Acquisto: " + (pk.data ? isoToDateLabel(pk.data) : "—") + linkedNote +
+    (linkedApps.length ? "  ·  Appuntamenti: " + linkedApps.length : "  ·  Nessun appuntamento");
   return li;
 }
 
@@ -1237,10 +1437,11 @@ function renderClienteGestione(box, c) {
       <ul id="cliente-appuntamenti-list" class="list"></ul>
     </section>
     <section class="card-section" aria-labelledby="cliente-card-pacchetti">
-      ${cardSectionHead("cliente-card-pacchetti", "Pacchetti", "cliente-btn-nuovo-pacchetto", "+ Nuovo pacchetto", CARD_FORMS.pacchetto)}
+      ${cardSectionHead("cliente-card-pacchetti", "Pacchetti", "cliente-btn-nuovo-pacchetto", "+ Vendi pacchetto", CARD_FORMS.pacchetto)}
       ${pacchettoFormHtml(c.id)}
       <ul id="cliente-pacchetti-list" class="list"></ul>
     </section>`);
+  fillPacchettoTipoDatalist(box);
   renderCardPagamenti(box, c);
   renderCardAppuntamenti(box, c);
   renderCardPacchetti(box, c);
@@ -1265,15 +1466,20 @@ function renderClienteStorico(box, links) {
   const appBox = box.querySelector("[data-detail-appuntamenti]");
   if (!links.appuntamenti.length) appBox.textContent = "Nessun appuntamento.";
   for (const a of [...links.appuntamenti].sort((x, y) => (x.data + x.ora).localeCompare(y.data + y.ora))) {
-    detailRow(appBox, isoToDateLabel(a.data) + " · " + a.ora + " · " + a.tipo, a.fatto ? "Fatto" : "Da fare");
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    detailRow(appBox, isoToDateLabel(a.data) + " · " + a.ora + " · " + a.tipo +
+      (pk ? " · " + pacchettoLabel(pk.tipo) : ""), a.fatto ? "Fatto" : "Da fare");
   }
 
   const pkBox = box.querySelector("[data-detail-pacchetti]");
   if (!links.pacchetti.length) pkBox.textContent = "Nessun pacchetto.";
   for (const pk of links.pacchetti) {
+    const apps = data.appuntamenti.filter(a => a.pacchettoId === pk.id).length;
     detailRow(pkBox,
-      pk.lezioni + " lezioni · " + money(pk.prezzo) + " · acquisto " + (pk.data ? isoToDateLabel(pk.data) : "—"),
-      "Utilizzate: " + pk.utilizzate + " · rimaste: " + Math.max(0, pk.lezioni - pk.utilizzate));
+      pacchettoLabel(pk.tipo) + " · " + pk.lezioni + " lezioni · " + money(pk.prezzo) +
+        " · acquisto " + (pk.data ? isoToDateLabel(pk.data) : "—"),
+      "Utilizzate: " + pk.utilizzate + " · rimaste: " + Math.max(0, pk.lezioni - pk.utilizzate) +
+        (apps ? " · appuntamenti: " + apps : ""));
   }
 }
 
@@ -1286,7 +1492,8 @@ function captureOpenCardForms(box, clienteId) {
       const form = p.querySelector("form");
       if (form) {
         for (const el of form.elements) {
-          if (el.name && el.name !== "clienteId") values[el.name] = el.value;
+          if (!el.name || el.name === "clienteId") continue;
+          values[el.name] = el.type === "checkbox" ? (el.checked ? "on" : "") : el.value;
         }
       }
       const title = p.querySelector("[data-form-title]");
@@ -1326,9 +1533,17 @@ function restoreOpenCardForms(box, snapshot) {
     }
     const receipt = panel.querySelector("[data-receipt-fields]");
     if (receipt && item.receiptHidden !== null) receipt.hidden = item.receiptHidden;
+    if (panel.id === CARD_FORMS.pacchetto) {
+      const schedule = panel.querySelector("[data-schedule-fields]");
+      if (schedule) schedule.hidden = recordId > 0;
+    }
     for (const [name, value] of Object.entries(item.values)) {
       const el = form.elements.namedItem(name);
       if (!el) continue;
+      if (el.type === "checkbox") {
+        el.checked = value === "on";
+        continue;
+      }
       if (el.tagName === "SELECT" && ![...el.options].some(o => o.value === value)) {
         const opt = document.createElement("option");
         opt.value = value;
@@ -1338,6 +1553,7 @@ function restoreOpenCardForms(box, snapshot) {
       el.value = value;
     }
     syncFormExpanded(panel.id);
+    if (panel.id === CARD_FORMS.pacchetto) renderPacchettoPreview(panel);
   }
 }
 
@@ -2307,10 +2523,14 @@ function toggleForm(id, show, record) {
   const title = panel.querySelector("[data-form-title]");
   if (title) {
     const names = { cliente: "cliente", pagamento: "pagamento", appuntamento: "appuntamento", pacchetto: "pacchetto" };
-    title.textContent = (record ? "Modifica " : "Nuovo ") + names[kind];
+    title.textContent = kind === "pacchetto" && !record
+      ? "Vendi pacchetto"
+      : (record ? "Modifica " : "Nuovo ") + names[kind];
   }
   const receiptFields = panel.querySelector("[data-receipt-fields]");
   if (receiptFields) receiptFields.hidden = !!record;
+  const scheduleFields = panel.querySelector("[data-schedule-fields]");
+  if (scheduleFields) scheduleFields.hidden = !!record;
   if (record) {
     for (const [key, value] of Object.entries(record)) {
       const el = f.elements.namedItem(key);
@@ -2328,9 +2548,14 @@ function toggleForm(id, show, record) {
     }
   }
   // Date predefinite per i nuovi inserimenti (l'utente può cambiarle).
-  for (const name of ["data", "dataIncasso"]) {
+  for (const name of ["data", "dataIncasso", "primaLezione"]) {
     const el = f.elements.namedItem(name);
     if (el && !el.value && !record) el.value = todayStr();
+  }
+  if (kind === "pacchetto") {
+    const ora = f.elements.namedItem("ora");
+    if (ora && !ora.value && !record) ora.value = "09:00";
+    renderPacchettoPreview(panel);
   }
   const first = panel.querySelector("input:not([type=hidden]), select");
   if (first) first.focus();
@@ -2451,9 +2676,10 @@ function handleClick(e) {
       const items = [
         { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati", extra: plan.pagamenti.length ? money(contratti) : "" },
         { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
+        { n: plan.appuntamentiDaEliminare.length, singular: "appuntamento non svolto", plural: "appuntamenti non svolti" },
       ];
       const msg = confirmDeletionMessage(
-        "Eliminare il pacchetto di " + clienteNome(pk.clienteId) + " (" + pk.lezioni + " lezioni)?",
+        "Eliminare " + pacchettoLabel(pk.tipo) + " di " + clienteNome(pk.clienteId) + " (" + pk.lezioni + " lezioni)?",
         items, plan.warnings, ""
       );
       if (!confirm(msg)) return;
@@ -2516,6 +2742,7 @@ function handleClick(e) {
         const items = [
           { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati" },
           { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
+          { n: plan.appuntamentiDaEliminare.length, singular: "appuntamento non svolto", plural: "appuntamenti non svolti" },
         ];
         if (!confirm(confirmDeletionMessage("Eliminare definitivamente questo pacchetto senza cliente?", items, plan.warnings, ""))) return;
       } else if (!confirm("Eliminare definitivamente questo dato senza cliente?")) {
@@ -2762,17 +2989,23 @@ document.addEventListener("submit", (e) => {
   if (kind === "pacchetto") {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
+    const tipo = (fd.get("tipo") || "").toString().trim().slice(0, 60);
     const lezioni = Number(fd.get("lezioni"));
     const prezzo = Math.round(Number(fd.get("prezzo")) * 100) / 100;
     const accontoRaw = Number(fd.get("acconto")) || 0;
     const acconto = Math.round(accontoRaw * 100) / 100;
     const data_ = (fd.get("data") || "").toString();
     let dataIncasso = (fd.get("dataIncasso") || "").toString();
+    const programma = fd.get("programma") === "on";
+    const primaLezione = (fd.get("primaLezione") || "").toString();
+    const ora = (fd.get("ora") || "").toString();
+    const cadenza = Number(fd.get("cadenza")) || 7;
+    const tipoLezione = (fd.get("tipoLezione") || "").toString() || "Addestramento";
     if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!Number.isInteger(lezioni) || lezioni < 1) { setStatus("Il numero di lezioni deve essere almeno 1.", true); return; }
     if (!(prezzo > 0)) { setStatus("Il prezzo deve essere maggiore di 0.", true); return; }
     if (acconto < 0) { setStatus("L'acconto non può essere negativo.", true); return; }
-    if (!isIsoDate(data_)) { setStatus("Inserisci una data di acquisto valida.", true); return; }
+    if (!isIsoDate(data_)) { setStatus("Inserisci una data di vendita valida.", true); return; }
 
     if (id) {
       const pk = data.pacchetti.find(x => x.id === id);
@@ -2789,6 +3022,7 @@ document.addEventListener("submit", (e) => {
       }
       rememberUndo("Pacchetto modificato.");
       pk.clienteId = clienteId;
+      pk.tipo = tipo;
       pk.lezioni = lezioni;
       pk.prezzo = prezzo;
       pk.data = data_;
@@ -2796,7 +3030,7 @@ document.addEventListener("submit", (e) => {
         linked.clienteId = clienteId;
         linked.importo = prezzo;
         linked.data = data_;
-        linked.descrizione = "Pacchetto " + lezioni + " lezioni";
+        linked.descrizione = pacchettoDescrizione(tipo, lezioni);
         linked.stato = statoPagamento(linked);
       } else {
         // Dato legacy o incompleto: ricrea il pagamento collegato mancante.
@@ -2806,7 +3040,7 @@ document.addEventListener("submit", (e) => {
           importo: prezzo,
           data: data_,
           stato: "Da pagare",
-          descrizione: "Pacchetto " + lezioni + " lezioni",
+          descrizione: pacchettoDescrizione(tipo, lezioni),
           pacchettoId: pk.id,
           incassoDaVerificare: false,
         });
@@ -2823,32 +3057,72 @@ document.addEventListener("submit", (e) => {
     if (acconto > prezzo) { setStatus("L'acconto non può superare il prezzo totale.", true); return; }
     if (acconto > 0 && !dataIncasso) dataIncasso = data_;
     if (acconto > 0 && !isIsoDate(dataIncasso)) { setStatus("La data dell'acconto non è valida.", true); return; }
-    // Evita raddoppio: stesso cliente, stessa data e stesso numero di lezioni.
-    const dup = data.pacchetti.find(p => p.clienteId === clienteId && p.data === data_ && p.lezioni === lezioni);
-    if (dup) { setStatus("Un pacchetto con le stesse lezioni e data è già registrato per questo cliente.", true); return; }
-    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, tipo: "", lezioni, utilizzate: 0, prezzo, data: data_ };
+    // Evita raddoppio: stesso cliente, stessa data, stesse lezioni e stesso tipo.
+    const tipoKey = v => {
+      const t = (v || "").trim();
+      return t.toLowerCase() === "pacchetto" ? "" : t.toLowerCase();
+    };
+    const dup = data.pacchetti.find(p => p.clienteId === clienteId && p.data === data_ &&
+      p.lezioni === lezioni && tipoKey(p.tipo) === tipoKey(tipo));
+    if (dup) { setStatus("Un pacchetto con le stesse lezioni, data e tipo è già registrato per questo cliente.", true); return; }
+
+    let dates = [];
+    if (programma) {
+      if (!isIsoDate(primaLezione)) { setStatus("Inserisci una data valida per la prima lezione.", true); return; }
+      if (!isTime(ora)) { setStatus("Inserisci un'ora valida per le lezioni.", true); return; }
+      if (cadenza !== 7 && cadenza !== 14) { setStatus("La cadenza deve essere di 7 o 14 giorni.", true); return; }
+      dates = scheduleDates(primaLezione, lezioni, cadenza);
+      if (dates.length !== lezioni) { setStatus("Impossibile calcolare le date degli appuntamenti.", true); return; }
+      const conflicts = scheduleConflicts(dates, ora);
+      if (conflicts.length) {
+        const c = conflicts[0];
+        setStatus("Data occupata: " + isoToDateLabel(c.data) + " alle " + c.ora + " (" +
+          clienteNome(c.clienteId) + "). Scegli un'altra data, ora o cadenza.", true);
+        return;
+      }
+    }
+
+    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, tipo, lezioni, utilizzate: 0, prezzo, data: data_ };
     const nuovoPagamento = {
       id: nextId(data.pagamenti),
       clienteId,
       importo: prezzo,
       data: data_,
       stato: "Da pagare",
-      descrizione: "Pacchetto " + lezioni + " lezioni",
+      descrizione: pacchettoDescrizione(tipo, lezioni),
       pacchettoId: nuovoPacchetto.id,
       incassoDaVerificare: false,
     };
+    rememberUndo("Pacchetto venduto.");
     data.pacchetti.push(nuovoPacchetto);
     data.pagamenti.push(nuovoPagamento);
-    if (acconto > 0) addIncasso(nuovoPagamento.id, acconto, dataIncasso, "Acconto pacchetto");
+    if (acconto > 0) addIncasso(nuovoPagamento.id, acconto, dataIncasso, "Acconto " + pacchettoLabel(tipo));
+    const newAppointments = [];
+    if (programma) {
+      let nextAppId = nextId(data.appuntamenti);
+      for (const d of dates) {
+        const row = {
+          id: nextAppId++,
+          clienteId,
+          data: d,
+          ora,
+          tipo: tipoLezione,
+          pacchettoId: nuovoPacchetto.id,
+          fatto: false,
+        };
+        newAppointments.push(row);
+        data.appuntamenti.push(row);
+      }
+    }
     nuovoPagamento.stato = statoPagamento(nuovoPagamento);
     const saldoMsg = acconto > 0 ? " · saldo " + money(prezzo - acconto) : "";
-    if (!commit("Pacchetto salvato: " + lezioni + " lezioni per " + clienteNome(clienteId) + saldoMsg)) {
-      data.pacchetti = data.pacchetti.filter(x => x.id !== nuovoPacchetto.id);
-      data.pagamenti = data.pagamenti.filter(x => x.id !== nuovoPagamento.id);
-      data.incassi = data.incassi.filter(i => i.pagamentoId !== nuovoPagamento.id);
+    const appMsg = programma ? " · " + newAppointments.length + " appuntamenti creati" : "";
+    if (!commit(pacchettoLabel(tipo) + " venduto: " + lezioni + " lezioni per " + clienteNome(clienteId) + saldoMsg + appMsg)) {
+      restoreUndoState();
       return;
     }
     closeFormPanel(form);
+    offerUndo();
   }
 
   if (kind === "appuntamento") {
