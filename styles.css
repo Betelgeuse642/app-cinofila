@@ -746,13 +746,19 @@ a { color: inherit; }
   font-size: var(--step--1);
 }
 
-.checkbox-row {
+.form-panel .checkbox-row {
   flex-direction: row;
   align-items: center;
   gap: var(--space-2xs);
 }
 
-.checkbox-row input { width: auto; }
+.form-panel .checkbox-row input {
+  width: auto;
+  min-height: auto;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
 
 .schedule-preview {
   margin-top: var(--space-s);
