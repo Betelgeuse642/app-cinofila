@@ -136,6 +136,7 @@ function normalizeAppuntamento(a) {
     data,
     ora,
     tipo: str(a.tipo, 60) || "Addestramento",
+    istruttore: str(a.istruttore, 60),
     pacchettoId: typeof a.pacchettoId === "number" && Number.isInteger(a.pacchettoId) && a.pacchettoId > 0 ? a.pacchettoId : 0,
     fatto: a.fatto === true,
   };
@@ -143,7 +144,9 @@ function normalizeAppuntamento(a) {
 
 function normalizePacchetto(p) {
   if (!p || !validId(p.id)) { warn("pacchetti: riga senza id valido ignorata"); return null; }
+  const categoria = p.categoria === "singola" ? "singola" : "pacchetto";
   let lezioni = Number.isInteger(p.lezioni) && p.lezioni >= 0 ? p.lezioni : 0;
+  if (categoria === "singola") lezioni = 1;
   if (lezioni === 0) warn("pacchetti: numero lezioni non valido per id " + p.id);
   const utilizzate = Number.isInteger(p.utilizzate) && p.utilizzate >= 0 ? Math.min(p.utilizzate, lezioni) : 0;
   let prezzo = p.prezzo;
@@ -160,7 +163,9 @@ function normalizePacchetto(p) {
   return {
     id: p.id,
     clienteId: typeof p.clienteId === "number" ? p.clienteId : 0,
+    categoria,
     tipo: str(p.tipo, 60),
+    istruttore: str(p.istruttore, 60),
     lezioni,
     utilizzate,
     prezzo,
@@ -3082,7 +3087,7 @@ document.addEventListener("submit", (e) => {
       }
     }
 
-    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, tipo, lezioni, utilizzate: 0, prezzo, data: data_ };
+    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, categoria: "pacchetto", tipo, istruttore: "", lezioni, utilizzate: 0, prezzo, data: data_ };
     const nuovoPagamento = {
       id: nextId(data.pagamenti),
       clienteId,
@@ -3151,7 +3156,7 @@ document.addEventListener("submit", (e) => {
       offerUndo();
       return;
     }
-    const row = { id: nextId(data.appuntamenti), clienteId, data: data_, ora, tipo, pacchettoId: 0, fatto: false };
+    const row = { id: nextId(data.appuntamenti), clienteId, data: data_, ora, tipo, istruttore: "", pacchettoId: 0, fatto: false };
     data.appuntamenti.push(row);
     if (!commit("Appuntamento salvato per " + clienteNome(clienteId))) {
       data.appuntamenti = data.appuntamenti.filter(a => a.id !== row.id);
@@ -3213,7 +3218,7 @@ function renderBackupInfo() {
 function exportData() {
   try {
     const payload = JSON.stringify({
-      schemaVersion: 3,
+      schemaVersion: 4,
       exportedAt: new Date().toISOString(),
       clienti: data.clienti,
       pagamenti: data.pagamenti,
