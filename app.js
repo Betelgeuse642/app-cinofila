@@ -136,6 +136,7 @@ function normalizeAppuntamento(a) {
     data,
     ora,
     tipo: str(a.tipo, 60) || "Addestramento",
+    pacchettoId: typeof a.pacchettoId === "number" && Number.isInteger(a.pacchettoId) && a.pacchettoId > 0 ? a.pacchettoId : 0,
     fatto: a.fatto === true,
   };
 }
@@ -159,6 +160,7 @@ function normalizePacchetto(p) {
   return {
     id: p.id,
     clienteId: typeof p.clienteId === "number" ? p.clienteId : 0,
+    tipo: str(p.tipo, 60),
     lezioni,
     utilizzate,
     prezzo,
@@ -2824,7 +2826,7 @@ document.addEventListener("submit", (e) => {
     // Evita raddoppio: stesso cliente, stessa data e stesso numero di lezioni.
     const dup = data.pacchetti.find(p => p.clienteId === clienteId && p.data === data_ && p.lezioni === lezioni);
     if (dup) { setStatus("Un pacchetto con le stesse lezioni e data è già registrato per questo cliente.", true); return; }
-    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, lezioni, utilizzate: 0, prezzo, data: data_ };
+    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, tipo: "", lezioni, utilizzate: 0, prezzo, data: data_ };
     const nuovoPagamento = {
       id: nextId(data.pagamenti),
       clienteId,
@@ -2875,7 +2877,7 @@ document.addEventListener("submit", (e) => {
       offerUndo();
       return;
     }
-    const row = { id: nextId(data.appuntamenti), clienteId, data: data_, ora, tipo, fatto: false };
+    const row = { id: nextId(data.appuntamenti), clienteId, data: data_, ora, tipo, pacchettoId: 0, fatto: false };
     data.appuntamenti.push(row);
     if (!commit("Appuntamento salvato per " + clienteNome(clienteId))) {
       data.appuntamenti = data.appuntamenti.filter(a => a.id !== row.id);
@@ -2937,7 +2939,7 @@ function renderBackupInfo() {
 function exportData() {
   try {
     const payload = JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       exportedAt: new Date().toISOString(),
       clienti: data.clienti,
       pagamenti: data.pagamenti,

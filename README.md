@@ -56,7 +56,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
 ```
 
-Ultima verifica: **509 test superati, 0 fallimenti** (01/11/2026).
+Ultima verifica: **511 test superati, 0 fallimenti** (01/11/2026).
 
 ## Repository e pubblicazione
 

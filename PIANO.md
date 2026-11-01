@@ -1097,3 +1097,42 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase completata e verificata localmente. Non eseguire commit, push, merge o pubblicazione senza richiesta e approvazione esplicita.
+
+---
+
+# Fase 24 — Modello dati per la vendita pacchetto (completata e verificata localmente)
+
+## Richiesta
+
+- Preparare il modello dati per il flusso unico “Vendi pacchetto”: tipo di pacchetto, collegamento degli appuntamenti al pacchetto e pratica di pagamento.
+- Mantenere compatibilità con i dati esistenti e con `localStorage` `cinofilo-data-v1`.
+
+## Decisioni
+
+- `pacchetto.tipo`: stringa libera, massimo 60 caratteri, default `""`.
+- `appuntamento.pacchettoId`: intero positivo, default `0` (appuntamento manuale).
+- La pratica di pagamento resta il pagamento collegato tramite `pagamento.pacchettoId`; nessuna nuova entità.
+- Export portato a `schemaVersion: 3`; import di file precedenti con valori predefiniti sicuri.
+
+## Implementazione effettiva
+
+- **Normalizzazione**: `normalizePacchetto` aggiunge `tipo`; `normalizeAppuntamento` aggiunge `pacchettoId`. I dati mancanti o non validi ricevono `""` e `0`.
+- **Creazione**: i nuovi pacchetti nascono con `tipo: ""`; i nuovi appuntamenti manuali con `pacchettoId: 0`. La modifica di un pacchetto o appuntamento preserva i campi esistenti.
+- **Export/import**: `schemaVersion` portato a 3; i nuovi campi sono esportati e reimportati. I backup precedenti restano leggibili.
+- **Nessuna modifica UI**: il form unico e il calendario automatico arrivano nelle fasi successive.
+
+## Test effettivi
+
+- Suite completa: **511 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **101/101**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **49/49**, Fase 14 **49/49**, Fase 16 **50/50**.
+- Nuovi controlli: `pacchettoId` default sugli appuntamenti (regressione 1f, Fase 8 8.7e), `tipo` default sui pacchetti (regressione 9a, 16i), chiavi export aggiornate e `schemaVersion 3` (regressione 14a/14b).
+
+## Problemi aperti / note
+
+- Il tipo pacchetto non è ancora modificabile dall’interfaccia: verrà esposto nella Fase 25.
+- Gli appuntamenti non vengono ancora generati automaticamente: Fase 26.
+- Le modifiche sono sul branch locale `feat/fase-24-29-vendita-pacchetto`; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 24 completata. Attendere approvazione prima di avviare la Fase 25 (form unico “Vendi pacchetto” e pratica di pagamento).

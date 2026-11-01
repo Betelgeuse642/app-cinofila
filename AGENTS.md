@@ -6,7 +6,7 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 ## Stato del progetto
 - Web app realizzata con HTML, CSS e JavaScript vanilla.
 - Dati salvati localmente tramite `localStorage`, chiave `cinofilo-data-v1`.
-- Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`.
+- Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`; i pacchetti hanno `tipo`, gli appuntamenti un `pacchettoId` opzionale (0 = manuale).
 - Incassi separati dai contratti: stati pagamento derivati (`Pagato`, `Parziale`, `Da pagare`, `Da verificare`).
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
 - Scheda cliente con sezioni gestibili per pagamenti, appuntamenti e pacchetti; archivio clienti dedicato e gestione dati orfani.
@@ -17,8 +17,8 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Riorganizzazione della scheda cliente completata e verificata localmente, non ancora pubblicata.
-- Ultima verifica dichiarata: **509 test superati, 0 fallimenti** (01/11/2026).
+- Fasi 8–17 completate e pubblicate. Riorganizzazione della scheda cliente (Fasi 18–23) completata e verificata localmente. Fase 24 (modello dati per la vendita pacchetto) completata localmente; nessuna pubblicazione.
+- Ultima verifica dichiarata: **511 test superati, 0 fallimenti** (01/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -50,7 +50,7 @@ Queste informazioni descrivono lo stato noto. Verifica sempre il repository prim
 Dalla cartella `/home/betelgeuse/OPENCODE_JOB/add_cinofilo-tests/`:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 test_regressione.py   # 99
+PYTHONDONTWRITEBYTECODE=1 python3 test_regressione.py   # 101
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase7.py         # 52
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase8.py         # 37
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase9.py         # 34
