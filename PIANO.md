@@ -1251,3 +1251,52 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fasi 30–36 completate e verificate localmente. L’app è pronta per la prova locale; nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 37 — Scheda cliente semplificata e schede minimal (completata e verificata localmente)
+
+## Richiesta
+
+- Rimuovere il tasto **Rinomina** dalla scheda cliente: basta **Modifica**.
+- Sostituire “Vendi” con “Aggiungi” per pacchetti e lezioni.
+- Nel form pacchetto: sottosezione **Pacchetto**, senza istruttore e senza data di vendita; sottosezione **Pagamento** senza nota e data negli acconti; date lezioni invariate.
+- Nel form lezione singola: sottosezione **Lezione singola**, senza istruttore e senza data di vendita; sottosezione **Pagamento** senza nota e data; **Data lezione** al singolare.
+- Output di pacchetto e lezione singola in un’unica scheda orizzontale per elemento, modificabile, non tre schede separate; interfaccia minimale per persone poco tecnologiche.
+
+## Decisioni
+
+- La data di vendita è automatica: `todayStr()` per i nuovi pacchetti/lezioni; in modifica resta la data originale.
+- L’istruttore non è più un campo del pacchetto/lezione: si inserisce in ogni riga data. Per compatibilità, `pacchetto.istruttore` viene valorizzato con il primo istruttore inserito e serve solo come default interno per “Aggiungi lezione”.
+- Gli acconti iniziali hanno solo l’importo; la data è oggi e la nota è automatica (`Acconto 1`, `Acconto 2`, ...).
+- Le tre sezioni dell’output sono pannelli piatti dentro una sola scheda, separate da linee sottili, senza card annidate.
+
+## Implementazione effettiva
+
+- **Scheda cliente**: rimosso il pulsante `Rinomina` e il relativo handler; resta `Modifica`.
+- **Pulsanti e titoli**: `+ Aggiungi pacchetto`, `+ Aggiungi lezione`; titoli form `Pacchetto` e `Lezione singola`; pulsanti verdi `Aggiungi pacchetto` e `Aggiungi lezione`.
+- **Form pacchetto**: leggenda `Pacchetto`, campi tipo, lezioni e prezzo; rimossi istruttore e data vendita; leggenda `Pagamento`; leggenda `Date lezioni`.
+- **Form lezione singola**: leggenda `Lezione singola`, tipo e prezzo; rimossi istruttore e data vendita; leggenda `Pagamento`; leggenda `Data lezione`.
+- **Acconti iniziali**: riga con solo importo e pulsante Rimuovi; data odierna e nota `Acconto N` automatiche.
+- **Calendario**: ogni riga mantiene data, ora e istruttore; l’istruttore è quindi diverso per lezione.
+- **Output**: una sola scheda `.lezione-group` per pacchetto/lezione; le tre sezioni Pacchetto, Pagamenti e Calendario sono pannelli piatti nella stessa scheda, separati da bordi sottili; ridotte le righe di riepilogo (rimossi istruttore e data di vendita dal gruppo).
+- **Modifica**: il form continua a nascondere calendario e acconti e permette di cambiare tipo, lezioni e prezzo; gli appuntamenti restano invariati.
+- **Stili**: rimosse le card interne; griglia a tre colonne su desktop e colonna singola su mobile; riga acconto a due colonne; etichette di sezione più piccole.
+
+## Test effettivi
+
+- Suite completa: **532 test superati, 0 fallimenti** (02/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **72/72**.
+- Nuovi controlli in `test_fase30.py`: pulsanti “Aggiungi”, titoli e leggende, assenza dei campi istruttore/data, data automatica, note automatiche degli acconti, form lezione singola con “Data lezione”.
+- Verifica manuale: form pacchetto e lezione singola, data automatica, acconti senza data/nota, istruttore solo nelle date, scheda compatta, modifica, mobile.
+
+## Problemi aperti / note
+
+- La data di vendita non è modificabile dall’interfaccia: è sempre oggi per i nuovi inserimenti.
+- L’istruttore del pacchetto non è più un campo separato: si inserisce nelle singole date; il primo istruttore viene usato come default interno.
+- Gli acconti iniziali non permettono una data diversa da oggi né una nota personalizzata; gli incassi successivi dal blocco Pagamento mantengono data e nota.
+- Il branch resta locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 37 completata e verificata localmente. Nessuna pubblicazione su GitHub.

@@ -20,12 +20,12 @@ Il sito è pubblico e non ha autenticazione. I dati restano nel browser dell'ute
 
 ## Funzioni principali
 
-- **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**, ciascuna con Pacchetto/Lezione, Pagamenti e Calendario.
+- **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**, ciascuna con una scheda compatta per Pacchetto/Lezione, Pagamento e Calendario.
 - **Archivio**: clienti archiviati con ricerca, scheda completa in sola consultazione, riattivazione ed eliminazione.
 - **Pagamenti** (dentro ogni pacchetto/lezione): totale, acconti multipli registrati liberamente (Acconto 1, Acconto 2, Saldo) senza scadenze pianificate, saldo e stato derivato `Pagato`, `Parziale`, `Da pagare`, `Da verificare`.
 - **Calendario** (dentro ogni pacchetto/lezione): date scelte singolarmente, ora e istruttore per lezione; aggiunta, modifica, eliminazione e stato fatto/da fare. L’istruttore può essere diverso per ogni lezione.
 - **Appuntamenti** (vista home): agenda globale di tutte le lezioni, raggruppata per giorno, con ricerca e filtri per periodo, stato e categoria; modifica di data, ora, istruttore e stato.
-- **Pacchetti e lezioni**: vendita guidata con tipo, lezioni, prezzo, acconti e saldo; date individuali e istruttore per lezione; pagamento collegato; lezioni totali/consumate/rimanenti; eliminazione con pagamenti, incassi e appuntamenti non svolti collegati.
+- **Pacchetti e lezioni**: inserimento guidato con tipo, lezioni, prezzo, acconti e saldo; data automatica; date individuali con istruttore per lezione; pagamento collegato; lezioni totali/consumate/rimanenti; eliminazione con pagamenti, incassi e appuntamenti non svolti collegati.
 - **Resoconto**: incassato effettivo del mese, crediti residui, incidenza per cliente, trend rispetto al mese precedente; filtro per cliente.
 - **Report stampabile/PDF**: dal Resoconto, con separazione tra incassi effettivi e importi contrattuali.
 - **CSV**: esportazione di incassi e pagamenti del mese, anche filtrati per cliente.
@@ -58,7 +58,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py
 ```
 
-Ultima verifica: **525 test superati, 0 fallimenti** (01/11/2026).
+Ultima verifica: **532 test superati, 0 fallimenti** (02/11/2026).
 
 ## Repository e pubblicazione
 
@@ -169,6 +169,8 @@ git push origin v1.1.0
 - L'inserimento di una lezione si blocca se data e ora sono già occupate; non c'è uno spostamento automatico.
 - Il consumo delle lezioni resta manuale con “Consuma lezione”; non viene incrementato automaticamente segnando un appuntamento come fatto.
 - Il tipo di pacchetto è facoltativo: se vuoto viene mostrato come “Pacchetto”.
+- La data di vendita è automatica (oggi) e non viene chiesta nel form; l’istruttore si inserisce solo nelle singole date delle lezioni.
+- Gli acconti iniziali hanno solo l’importo: data odierna e nota “Acconto N” sono automatiche.
 - Alla prima apertura, i vecchi appuntamenti e pagamenti senza pacchetto vengono convertiti in lezioni singole; i dati orfani restano nel pannello dedicato.
 - Non esistono rate pianificate con scadenza, registro istruttori o sincronizzazione con calendari esterni.
 - I dialoghi di conferma sono quelli nativi del browser.

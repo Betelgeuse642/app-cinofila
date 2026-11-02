@@ -1118,21 +1118,17 @@ function appuntamentoFormHtml(clienteId) {
 function pacchettoFormHtml(clienteId) {
   return `
     <div id="${CARD_FORMS.pacchetto}" class="form-panel" hidden>
-      <h5 data-form-title>Vendi pacchetto</h5>
+      <h5 data-form-title>Pacchetto</h5>
       <form data-form="pacchetto" data-new-btn="cliente-btn-nuovo-pacchetto">
         <input type="hidden" name="id" />
         <input type="hidden" name="clienteId" value="${clienteId}" />
         <input type="hidden" name="categoria" value="pacchetto" />
         <fieldset class="form-block">
-          <legend>Pacchetto o lezione</legend>
+          <legend data-form-kind-legend>Pacchetto</legend>
           <label>
             <span data-tipo-label>Tipo di pacchetto</span>
             <input type="text" name="tipo" list="tipi-suggeriti" maxlength="60" autocomplete="off"
                    placeholder="Es. Base, Puppy, Recupero" />
-          </label>
-          <label>
-            <span>Istruttore</span>
-            <input type="text" name="istruttore" list="istruttori-suggeriti" maxlength="60" autocomplete="off" />
           </label>
           <label data-lezioni-field>
             <span>Numero di lezioni</span>
@@ -1142,25 +1138,21 @@ function pacchettoFormHtml(clienteId) {
             <span>Prezzo totale (€)</span>
             <input type="number" name="prezzo" min="0.01" step="0.01" required />
           </label>
-          <label>
-            <span>Data di vendita</span>
-            <input type="date" name="data" required />
-          </label>
         </fieldset>
         <fieldset class="form-block" data-receipt-fields>
-          <legend>Acconti iniziali</legend>
+          <legend>Pagamento</legend>
           <div data-initial-receipts></div>
           <button type="button" class="btn-small" data-add-acconto>+ Aggiungi acconto</button>
           <p class="form-hint" data-payment-summary>Il saldo verrà calcolato al salvataggio.</p>
         </fieldset>
         <fieldset class="form-block" data-schedule-fields>
-          <legend>Date delle lezioni</legend>
+          <legend data-schedule-legend>Date lezioni</legend>
           <p class="form-hint">Compila le date che conosci: le altre si potranno aggiungere dal calendario.</p>
           <div data-schedule-rows></div>
           <p class="form-hint" data-schedule-summary></p>
         </fieldset>
         <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary" data-submit-label>Vendi pacchetto</button>
+          <button type="submit" class="btn-action btn-primary" data-submit-label>Aggiungi pacchetto</button>
           <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pacchetto}">Annulla</button>
         </div>
       </form>
@@ -1222,24 +1214,29 @@ function syncPacchettoForm(panel) {
   const id = Number(idField ? idField.value : 0);
   const categoria = categoriaField && categoriaField.value === "singola" ? "singola" : "pacchetto";
   const title = panel.querySelector("[data-form-title]");
+  const kindLegend = panel.querySelector("[data-form-kind-legend]");
+  const scheduleLegend = panel.querySelector("[data-schedule-legend]");
   const tipoLabel = panel.querySelector("[data-tipo-label]");
   const lezioniField = panel.querySelector("[data-lezioni-field]");
   const submit = panel.querySelector("[data-submit-label]");
+  const singola = categoria === "singola";
   if (title) {
-    title.textContent = (id ? "Modifica " : "Vendi ") +
-      (categoria === "singola" ? "lezione singola" : "pacchetto");
+    title.textContent = id ? (singola ? "Modifica lezione" : "Modifica pacchetto")
+      : (singola ? "Lezione singola" : "Pacchetto");
   }
-  if (tipoLabel) tipoLabel.textContent = categoria === "singola" ? "Tipo di lezione" : "Tipo di pacchetto";
-  if (lezioniField) lezioniField.hidden = categoria === "singola";
+  if (kindLegend) kindLegend.textContent = singola ? "Lezione singola" : "Pacchetto";
+  if (scheduleLegend) scheduleLegend.textContent = singola ? "Data lezione" : "Date lezioni";
+  if (tipoLabel) tipoLabel.textContent = singola ? "Tipo di lezione" : "Tipo di pacchetto";
+  if (lezioniField) lezioniField.hidden = singola;
   const lezioni = form.elements.namedItem("lezioni");
   if (lezioni) {
-    if (categoria === "singola" || !lezioni.value) lezioni.value = "1";
+    if (singola || !lezioni.value) lezioni.value = "1";
   }
   const prezzoField = form.elements.namedItem("prezzo");
-  if (prezzoField) prezzoField.min = categoria === "singola" ? "0" : "0.01";
+  if (prezzoField) prezzoField.min = singola ? "0" : "0.01";
   if (submit) {
     submit.textContent = id ? "Salva modifiche"
-      : (categoria === "singola" ? "Vendi lezione" : "Vendi pacchetto");
+      : (singola ? "Aggiungi lezione" : "Aggiungi pacchetto");
   }
   form.dataset.newBtn = categoria === "singola" ? "cliente-btn-nuova-singola" : "cliente-btn-nuovo-pacchetto";
   const receipt = panel.querySelector("[data-receipt-fields]");
@@ -1325,24 +1322,15 @@ function refreshPacchettoForm(panel) {
 function addInitialReceiptRow(panel, values) {
   const box = panel ? panel.querySelector("[data-initial-receipts]") : null;
   if (!box) return;
-  const n = box.children.length + 1;
   const row = document.createElement("div");
-  row.className = "dynamic-row";
+  row.className = "dynamic-row dynamic-row--payment";
   row.dataset.initialReceipt = "";
   row.innerHTML = `
     <label class="dynamic-row__field"><span>Importo (€)</span>
       <input type="number" min="0.01" step="0.01" data-field="importo" />
     </label>
-    <label class="dynamic-row__field"><span>Data</span>
-      <input type="date" data-field="data" />
-    </label>
-    <label class="dynamic-row__field"><span>Nota</span>
-      <input type="text" list="note-incasso-suggerite" data-field="nota" />
-    </label>
     <button type="button" class="btn-small btn-small--danger" data-remove-acconto>Rimuovi</button>`;
   row.querySelector('[data-field="importo"]').value = values && values.importo ? String(values.importo) : "";
-  row.querySelector('[data-field="data"]').value = (values && values.data) || todayStr();
-  row.querySelector('[data-field="nota"]').value = (values && values.nota) || ("Acconto " + n);
   box.appendChild(row);
   refreshPacchettoForm(panel);
 }
@@ -1350,8 +1338,7 @@ function addInitialReceiptRow(panel, values) {
 function addScheduleRow(panel, values) {
   const box = panel ? panel.querySelector("[data-schedule-rows]") : null;
   if (!box) return;
-  const form = panel.querySelector("form");
-  const defaultInstructor = form.elements.namedItem("istruttore").value.trim();
+  const defaultInstructor = "";
   const row = document.createElement("div");
   row.className = "dynamic-row";
   row.dataset.scheduleRow = "";
@@ -1386,10 +1373,10 @@ function syncScheduleRows(panel) {
 }
 
 function readInitialReceipts(panel) {
-  return [...(panel ? panel.querySelectorAll("[data-initial-receipt]") : [])].map(row => ({
+  return [...(panel ? panel.querySelectorAll("[data-initial-receipt]") : [])].map((row, i) => ({
     importo: Math.round((Number(row.querySelector('[data-field="importo"]').value) || 0) * 100) / 100,
-    data: row.querySelector('[data-field="data"]').value,
-    nota: row.querySelector('[data-field="nota"]').value.trim(),
+    data: todayStr(),
+    nota: "Acconto " + (i + 1),
   })).filter(r => r.importo !== 0);
 }
 
@@ -1552,11 +1539,8 @@ function lezioneGroup(pk) {
   badges[1].textContent = apps.length + "/" + pk.lezioni + " lezioni";
   const meta = group.querySelector("[data-meta]");
   const lines = [
-    "Tipo: " + (pk.tipo || "—"),
-    "Istruttore: " + (pk.istruttore || "—"),
     "Lezioni: " + pk.lezioni + " · Utilizzate: " + pk.utilizzate + " · Rimaste: " + lezioniRimanenti(pk),
     "Prezzo: " + money(pk.prezzo),
-    "Vendita: " + (pk.data ? isoToDateLabel(pk.data) : "—"),
   ];
   for (const line of lines) {
     const div = document.createElement("div");
@@ -1590,11 +1574,11 @@ function renderClienteGestione(box, c) {
     <datalist id="istruttori-suggeriti"></datalist>
     <datalist id="note-incasso-suggerite"></datalist>
     <section class="card-section" aria-labelledby="cliente-card-pacchetti">
-      ${cardSectionHead("cliente-card-pacchetti", "Pacchetto lezioni", "cliente-btn-nuovo-pacchetto", "+ Vendi pacchetto", CARD_FORMS.pacchetto)}
+      ${cardSectionHead("cliente-card-pacchetti", "Pacchetto lezioni", "cliente-btn-nuovo-pacchetto", "+ Aggiungi pacchetto", CARD_FORMS.pacchetto)}
       <div id="cliente-pacchetti-list" class="lezione-list"></div>
     </section>
     <section class="card-section" aria-labelledby="cliente-card-singole">
-      ${cardSectionHead("cliente-card-singole", "Lezione singola", "cliente-btn-nuova-singola", "+ Vendi lezione singola", CARD_FORMS.pacchetto)}
+      ${cardSectionHead("cliente-card-singole", "Lezione singola", "cliente-btn-nuova-singola", "+ Aggiungi lezione", CARD_FORMS.pacchetto)}
       <div id="cliente-singole-list" class="lezione-list"></div>
     </section>
     ${pacchettoFormHtml(c.id)}
@@ -1617,9 +1601,8 @@ function renderClienteStorico(box, links) {
   if (!singole.length) singleBox.textContent = "Nessuna lezione singola.";
   const appendLezione = (target, pk) => {
     detailRow(target,
-      lezioneLabel(pk) + " · " + money(pk.prezzo) + " · vendita " +
-        (pk.data ? isoToDateLabel(pk.data) : "—"),
-      "Istruttore: " + (pk.istruttore || "—") + " · utilizzate: " + pk.utilizzate +
+      lezioneLabel(pk) + " · " + money(pk.prezzo),
+      "Lezioni: " + pk.lezioni + " · utilizzate: " + pk.utilizzate +
         " · rimaste: " + Math.max(0, pk.lezioni - pk.utilizzate));
   };
   for (const pk of pacchetti) appendLezione(pkgBox, pk);
@@ -1664,8 +1647,6 @@ function captureOpenCardForms(box, clienteId) {
       const receipt = p.querySelector("[data-receipt-fields]");
       const initialReceipts = [...p.querySelectorAll("[data-initial-receipt]")].map(row => ({
         importo: row.querySelector('[data-field="importo"]').value,
-        data: row.querySelector('[data-field="data"]').value,
-        nota: row.querySelector('[data-field="nota"]').value,
       }));
       const scheduleRows = [...p.querySelectorAll("[data-schedule-row]")].map(row => ({
         data: row.querySelector('[data-field="data"]').value,
@@ -1927,7 +1908,6 @@ function renderClienti(skipDetail) {
       <div class="list-item__actions">
         <button type="button" class="btn-small" data-action="scheda-cliente">Scheda</button>
         <button type="button" class="btn-small" data-action="modifica-cliente">Modifica</button>
-        <button type="button" class="btn-small" data-action="rinomina-cliente">Rinomina</button>
         <button type="button" class="btn-small" data-action="archivia-cliente">Archivia</button>
         <button type="button" class="btn-small btn-small--danger" data-action="elimina-cliente">Elimina</button>
       </div>`;
@@ -3140,21 +3120,6 @@ function handleClick(e) {
         if (action.closest("#archivio-list")) goTo("clienti");
         toggleForm("form-cliente", true, c);
       }
-    } else if (act === "rinomina-cliente") {
-      const c = clienteById(id);
-      if (c) {
-        const n = prompt("Nuovo nome del cliente:", c.nome);
-        if (n === null) return;
-        const nome = n.trim();
-        if (!nome) { setStatus("Nome non valido.", true); return; }
-        const d = prompt("Cane (razza):", c.cane || "");
-        if (d === null) return;
-        rememberUndo("Cliente rinominato.");
-        c.nome = nome;
-        c.cane = d.trim();
-        if (!commit("Cliente rinominato.")) { restoreUndoState(); return; }
-        offerUndo();
-      }
     } else if (act === "elimina-cliente") {
       const plan = clienteDeletionPlan(id);
       if (!plan) return;
@@ -3333,17 +3298,15 @@ document.addEventListener("submit", (e) => {
     const clienteId = Number(fd.get("clienteId"));
     const categoria = fd.get("categoria") === "singola" ? "singola" : "pacchetto";
     const tipo = (fd.get("tipo") || "").toString().trim().slice(0, 60);
-    const istruttore = (fd.get("istruttore") || "").toString().trim().slice(0, 60);
     let lezioni = Number(fd.get("lezioni"));
     if (categoria === "singola") lezioni = 1;
     const prezzo = Math.round(Number(fd.get("prezzo")) * 100) / 100;
-    const data_ = (fd.get("data") || "").toString();
+    const data_ = todayStr();
     const panel = form.closest(".form-panel");
     if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!Number.isInteger(lezioni) || lezioni < 1) { setStatus("Il numero di lezioni deve essere almeno 1.", true); return; }
     if (!(prezzo >= 0)) { setStatus("Il prezzo non può essere negativo.", true); return; }
     if (categoria === "pacchetto" && !(prezzo > 0)) { setStatus("Il prezzo deve essere maggiore di 0.", true); return; }
-    if (!isIsoDate(data_)) { setStatus("Inserisci una data di vendita valida.", true); return; }
 
     if (id) {
       const pk = data.pacchetti.find(x => x.id === id);
@@ -3361,10 +3324,8 @@ document.addEventListener("submit", (e) => {
       rememberUndo("Pacchetto modificato.");
       pk.clienteId = clienteId;
       pk.tipo = tipo;
-      pk.istruttore = istruttore;
       pk.lezioni = categoria === "singola" ? 1 : lezioni;
       pk.prezzo = prezzo;
-      pk.data = data_;
       if (prezzo === 0) {
         if (linked && incassato === 0) {
           data.pagamenti = data.pagamenti.filter(p => p.id !== linked.id);
@@ -3373,7 +3334,6 @@ document.addEventListener("submit", (e) => {
       } else if (linked) {
         linked.clienteId = clienteId;
         linked.importo = prezzo;
-        linked.data = data_;
         linked.descrizione = lezioneDescrizione(pk);
         linked.stato = statoPagamento(linked);
       } else {
@@ -3382,7 +3342,7 @@ document.addEventListener("submit", (e) => {
           id: nextId(data.pagamenti),
           clienteId,
           importo: prezzo,
-          data: data_,
+          data: pk.data || data_,
           stato: "Da pagare",
           descrizione: lezioneDescrizione(pk),
           pacchettoId: pk.id,
@@ -3443,8 +3403,9 @@ document.addEventListener("submit", (e) => {
       p.categoria === categoria && p.lezioni === lezioni && tipoKey(p.tipo) === tipoKey(tipo));
     if (dup) { setStatus("Un elemento con le stesse lezioni, data e tipo è già registrato per questo cliente.", true); return; }
 
+    const defaultInstructor = scheduleRows.find(r => r.istruttore)?.istruttore || "";
     const nuovoPacchetto = {
-      id: nextId(data.pacchetti), clienteId, categoria, tipo, istruttore,
+      id: nextId(data.pacchetti), clienteId, categoria, tipo, istruttore: defaultInstructor,
       lezioni: categoria === "singola" ? 1 : lezioni, utilizzate: 0, prezzo, data: data_,
     };
     const nuovoPagamento = prezzo > 0 ? {
@@ -3477,7 +3438,7 @@ document.addEventListener("submit", (e) => {
           data: row.data,
           ora: row.ora,
           tipo: defaultTipo,
-          istruttore: row.istruttore || istruttore,
+          istruttore: row.istruttore || defaultInstructor,
           pacchettoId: nuovoPacchetto.id,
           fatto: false,
         };

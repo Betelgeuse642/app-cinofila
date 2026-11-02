@@ -9,8 +9,8 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`; i pacchetti hanno `categoria` (`pacchetto`/`singola`), `tipo` e `istruttore`; gli appuntamenti hanno `pacchettoId` e `istruttore`.
 - Incassi separati dai contratti: stati pagamento derivati (`Pagato`, `Parziale`, `Da pagare`, `Da verificare`).
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
-- Scheda cliente con due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni gruppo contiene i blocchi Pacchetto/Lezione, Pagamenti e Calendario.
-- Date delle lezioni scelte individualmente, istruttore predefinito e istruttore diverso per ogni lezione; acconti multipli registrati liberamente, senza rate pianificate o scadenze.
+- Scheda cliente con due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni gruppo è una scheda compatta con le sezioni Pacchetto/Lezione, Pagamento e Calendario.
+- Date delle lezioni scelte individualmente, istruttore indicato per ogni lezione (senza campo separato sul pacchetto); data di vendita automatica; acconti iniziali senza data/nota, con etichetta automatica.
 - Home con quattro pulsanti (**Scheda cliente**, **Appuntamenti**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `appuntamenti`, `archivio`, `resoconto`. `#appuntamenti` è una vista reale; gli hash legacy `#pagamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
 - Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto/lezione (pagamenti, incassi e appuntamenti non svolti; quelli svolti restano senza collegamento); conferma con conteggi e avvisi, operazione annullabile.
 - Nessun dato di esempio: il primo avvio è vuoto e non viene scritto nulla automaticamente.
@@ -18,8 +18,8 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Fasi 18–36 completate e verificate localmente sul branch `feat/fase-30-36-scheda-due-sezioni`; nessuna pubblicazione.
-- Ultima verifica dichiarata: **525 test superati, 0 fallimenti** (01/11/2026).
+- Fasi 8–17 completate e pubblicate. Fasi 18–37 completate e verificate localmente sul branch `feat/fase-30-36-scheda-due-sezioni`; nessuna pubblicazione.
+- Ultima verifica dichiarata: **532 test superati, 0 fallimenti** (02/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -62,7 +62,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 31
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 51
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py        # 50
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py        # 65
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py        # 72
 ```
 
 Esegui tutte le suite dopo modifiche a modello dati, rendering, filtri, report o accessibilità, e riporta i conteggi effettivi.

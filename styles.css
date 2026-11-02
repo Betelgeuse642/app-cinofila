@@ -862,23 +862,29 @@ a { color: inherit; }
 .lezione-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-s);
+  gap: 0;
   margin-top: var(--space-s);
 }
 
 .lezione-block {
   min-width: 0;
-  padding: var(--space-s);
-  background: #fbfdfb;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.lezione-block + .lezione-block {
+  padding-left: var(--space-s);
+  border-left: 1px solid var(--line);
 }
 
 .lezione-block h5 {
   margin: 0 0 var(--space-2xs);
-  font-family: var(--font-display);
-  font-size: var(--step-0);
-  font-weight: 600;
+  color: var(--ink-2);
+  font-family: var(--font-text);
+  font-size: var(--step--1);
+  font-weight: 700;
 }
 
 .lezione-meta {
@@ -893,7 +899,7 @@ a { color: inherit; }
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2xs);
-  margin-top: var(--space-s);
+  margin-top: var(--space-2xs);
 }
 
 .payment-head {
@@ -959,6 +965,10 @@ a { color: inherit; }
   border-top: 1px dashed var(--line);
 }
 
+.dynamic-row--payment {
+  grid-template-columns: 1fr auto;
+}
+
 .dynamic-row:first-child { border-top: 0; }
 
 .dynamic-row__field {
@@ -991,10 +1001,17 @@ a { color: inherit; }
 
 @media (max-width: 60rem) {
   .lezione-grid { grid-template-columns: 1fr; }
+  .lezione-block + .lezione-block {
+    padding-top: var(--space-s);
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
 }
 
 @media (max-width: 40rem) {
-  .dynamic-row { grid-template-columns: 1fr; }
+  .dynamic-row,
+  .dynamic-row--payment { grid-template-columns: 1fr; }
 }
 
 .detail-panel .list {
