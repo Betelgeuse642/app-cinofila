@@ -237,6 +237,9 @@ function normalizeData(raw) {
   let pkOrfani = 0;
   for (const p of pagamenti) if (p.pacchettoId && !pacchettiIds.has(p.pacchettoId)) { p.pacchettoId = 0; pkOrfani++; }
   if (pkOrfani) warn(pkOrfani + " pagamenti collegati a pacchetti inesistenti sono stati scollegati");
+  let appPkOrfani = 0;
+  for (const a of appuntamenti) if (a.pacchettoId && !pacchettiIds.has(a.pacchettoId)) { a.pacchettoId = 0; appPkOrfani++; }
+  if (appPkOrfani) warn(appPkOrfani + " appuntamenti collegati a pacchetti inesistenti sono stati convertiti in lezioni singole");
 
   // Migrazione alla scheda a due sezioni: appuntamenti e pagamenti senza
   // pacchetto diventano lezioni singole, senza inventare importi o date.

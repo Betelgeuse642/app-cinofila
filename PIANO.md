@@ -1320,6 +1320,7 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 - **Eliminazione**: il form di modifica include il tasto **Elimina**, visibile solo in modifica; usa lo stesso piano di eliminazione con conferma e undo.
 - **Date compatte**: sotto la riga, elenco delle date con data/ora, istruttore, tipo e stato; piccoli tasti `Modifica` ed `Elimina`. Il tasto `+ Aggiungi lezione` resta disponibile finché non sono programmate tutte le lezioni.
 - **Consumo automatico**: `autoConsumeLezioni()` calcola le lezioni collegate con data/ora già scadute e porta `utilizzate` almeno a quel numero, senza superare `lezioni`. Viene eseguito al caricamento, a ogni `commit`, a ogni `refresh` e con un controllo periodico di 60 secondi; se cambia qualcosa viene salvato.
+- **Normalizzazione**: gli appuntamenti con `pacchettoId` inesistente vengono scollegati e convertiti in lezioni singole, evitando calendari non visibili nella scheda cliente.
 - **Nessun tasto manuale** “Consuma lezione”: il consumo avviene solo allo scadere della data.
 - **Stili**: riga a colonna con azioni allineate in fondo a destra (larghezza piena su mobile), pannello pagamento separato da una linea, date in caratteri più piccoli, pulsanti `btn-tiny`, form elimina in rosso.
 

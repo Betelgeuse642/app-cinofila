@@ -171,7 +171,7 @@ git push origin v1.1.0
 - Il tipo di pacchetto è facoltativo: se vuoto viene mostrato come “Pacchetto”.
 - La data di vendita è automatica (oggi) e non viene chiesta nel form; l’istruttore si inserisce solo nelle singole date delle lezioni.
 - Gli acconti iniziali hanno solo l’importo: data odierna e nota “Acconto N” sono automatiche.
-- Alla prima apertura, i vecchi appuntamenti e pagamenti senza pacchetto vengono convertiti in lezioni singole; i dati orfani restano nel pannello dedicato.
+- Alla prima apertura, i vecchi appuntamenti e pagamenti senza pacchetto vengono convertiti in lezioni singole; anche i collegamenti a pacchetti inesistenti vengono scollegati. I dati orfani restano nel pannello dedicato.
 - Non esistono rate pianificate con scadenza, registro istruttori o sincronizzazione con calendari esterni.
 - I dialoghi di conferma sono quelli nativi del browser.
 - L'Archivio è in sola consultazione: per aggiungere pagamenti, pacchetti o lezioni a un cliente archiviato occorre prima riattivarlo.

@@ -47,7 +47,7 @@ Queste informazioni descrivono lo stato noto. Verifica sempre il repository prim
 - Verifica persistenza, esportazione e importazione dopo ogni modifica pertinente.
 - `saveData()` restituisce `false` in caso di errore: usa `commit(msg)` e non mascherare i fallimenti.
 - Il legacy `Parziale` senza incassi è marcato `incassoDaVerificare` ed escluso da incassi/crediti finché non viene verificato.
-- Alla prima lettura, appuntamenti e pagamenti senza `pacchettoId` vengono convertiti in lezioni singole; i dati orfani restano separati.
+- Alla prima lettura, appuntamenti e pagamenti senza `pacchettoId` vengono convertiti in lezioni singole; anche i collegamenti a pacchetti inesistenti vengono scollegati e convertiti. I dati orfani restano separati.
 
 ## Test
 Dalla cartella `/home/betelgeuse/OPENCODE_JOB/add_cinofilo-tests/`:
