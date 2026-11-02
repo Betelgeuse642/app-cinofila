@@ -589,9 +589,12 @@ window.addEventListener("storage", (e) => {
 });
 
 let data = loadData();
+// Consumo automatico delle lezioni già scadute (solo aumento, mai decremento).
+const consumedOnLoad = autoConsumeLezioni();
 // Esposto per test: consente ai test Playwright di re-idratre i dati da
 // localStorage (data.__testSet = <oggetto>) e re-renderizzare senza ricarica.
 window.__appData = data;
+if (consumedOnLoad && !storageBlocked && !storageCorrupt) saveData();
 
 /* ===== Helper ===== */
 function clienteById(id) {
@@ -673,6 +676,7 @@ function setStatus(msg, isError) {
 /* Salva e ridisegna; restituisce false se il salvataggio è fallito.
    I chiamanti non devono mostrare un messaggio di successo in caso di errore. */
 function commit(msg) {
+  autoConsumeLezioni();
   if (!saveData()) return false;
   refresh();
   if (msg) setStatus(msg);
@@ -1003,6 +1007,29 @@ function deletePacchettoCascade(plan) {
   }
 }
 
+function deletePacchettoById(id) {
+  const plan = pacchettoDeletionPlan(id);
+  if (!plan) return;
+  const pk = plan.pacchetto;
+  const label = lezioneLabel(pk);
+  const contratti = plan.pagamenti.reduce((s, p) => s + p.importo, 0);
+  const items = [
+    { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati", extra: plan.pagamenti.length ? money(contratti) : "" },
+    { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
+    { n: plan.appuntamentiDaEliminare.length, singular: "appuntamento non svolto", plural: "appuntamenti non svolti" },
+  ];
+  const msg = confirmDeletionMessage(
+    "Eliminare " + label + " di " + clienteNome(pk.clienteId) +
+      (pk.categoria === "pacchetto" ? " (" + pk.lezioni + " lezioni)?" : "?"),
+    items, plan.warnings, ""
+  );
+  if (!confirm(msg)) return;
+  rememberUndo(label + " eliminato.");
+  deletePacchettoCascade(plan);
+  if (!commit(label + " eliminato con i dati collegati.")) { restoreUndoState(); return; }
+  offerUndo();
+}
+
 function detailRow(box, title, note) {
   const row = document.createElement("div");
   row.className = "detail-row";
@@ -1154,6 +1181,7 @@ function pacchettoFormHtml(clienteId) {
         <div class="form-actions">
           <button type="submit" class="btn-action btn-primary" data-submit-label>Aggiungi pacchetto</button>
           <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pacchetto}">Annulla</button>
+          <button type="button" class="btn-action btn-danger" data-delete-pacchetto hidden>Elimina</button>
         </div>
       </form>
     </div>`;
@@ -1238,6 +1266,8 @@ function syncPacchettoForm(panel) {
     submit.textContent = id ? "Salva modifiche"
       : (singola ? "Aggiungi lezione" : "Aggiungi pacchetto");
   }
+  const deleteBtn = panel.querySelector("[data-delete-pacchetto]");
+  if (deleteBtn) deleteBtn.hidden = !id;
   form.dataset.newBtn = categoria === "singola" ? "cliente-btn-nuova-singola" : "cliente-btn-nuovo-pacchetto";
   const receipt = panel.querySelector("[data-receipt-fields]");
   if (receipt) receipt.hidden = id > 0;
@@ -1388,21 +1418,39 @@ function readScheduleRows(panel) {
   })).filter(r => r.data || r.ora);
 }
 
+function statoPagamentoLabel(p) {
+  const stato = statoPagamento(p);
+  if (stato === "Parziale") return "Parzialmente pagato";
+  if (stato === "Da verificare") return "Da verificare";
+  if (stato === "Pagato") return "Pagato";
+  return "Da pagare";
+}
+
+function nextLezioneLabel(apps) {
+  if (!apps.length) return "";
+  const now = new Date();
+  const sorted = [...apps].sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora));
+  const next = sorted.find(a => {
+    const when = new Date(a.data + "T" + a.ora + ":00");
+    return !isNaN(when.getTime()) && when >= now;
+  });
+  const a = next || sorted[sorted.length - 1];
+  return a ? isoToDateLabel(a.data) + (a.ora ? " · " + a.ora : "") : "";
+}
+
 function renderPaymentBlock(block, pk) {
   block.innerHTML = "";
   block.removeAttribute("data-id");
   const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
   if (!linked) {
-    block.innerHTML = `<h5>Pagamenti</h5>
-      <div class="list-empty">Nessun pagamento collegato.</div>
+    block.innerHTML = `<div class="list-empty">Nessun pagamento collegato.</div>
       <div class="lezione-block__actions">
         <button type="button" class="btn-small" data-action="modifica-pacchetto">Aggiungi pagamento</button>
       </div>`;
     return;
   }
   if (linked.clienteId !== pk.clienteId) {
-    block.innerHTML = `<h5>Pagamenti</h5>
-      <div class="list-empty">Pagamento collegato a un altro cliente.</div>`;
+    block.innerHTML = `<div class="list-empty">Pagamento collegato a un altro cliente.</div>`;
     return;
   }
   block.dataset.id = linked.id;
@@ -1411,7 +1459,6 @@ function renderPaymentBlock(block, pk) {
   const saldo = saldoPagamento(linked);
   const receipts = incassiDi(linked.id).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
   block.innerHTML = `
-    <h5>Pagamenti</h5>
     <div class="payment-head">
       <span class="badge ${badge.cls}"></span>
       <span class="payment-date" data-date></span>
@@ -1451,7 +1498,7 @@ function renderPaymentBlock(block, pk) {
     const row = document.createElement("div");
     row.className = "receipt-row";
     row.innerHTML = `<span class="receipt-row__text"></span>
-      <button type="button" class="btn-small btn-small--danger" data-action="elimina-incasso" data-incasso-id="${r.id}">Rimuovi</button>`;
+      <button type="button" class="btn-tiny btn-tiny--danger" data-action="elimina-incasso" data-incasso-id="${r.id}">Rimuovi</button>`;
     row.querySelector(".receipt-row__text").textContent =
       (r.data ? isoToDateLabel(r.data) : "Data non valida") + " · " + money(r.importo) +
       (r.nota ? " · " + r.nota : "");
@@ -1463,36 +1510,32 @@ function renderCalendarBlock(block, pk) {
   const apps = data.appuntamenti.filter(a => a.pacchettoId === pk.id)
     .sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora) || a.id - b.id);
   const canAdd = apps.length < pk.lezioni;
-  block.innerHTML = `<h5>Calendario</h5>
-    <div class="calendar-list" data-calendar-rows></div>
+  block.innerHTML = `<div class="date-list" data-calendar-rows></div>
     <div class="lezione-block__actions">
       ${canAdd ? `<button type="button" class="btn-small" data-action="nuova-lezione" data-pacchetto-id="${pk.id}">+ Aggiungi lezione</button>` : ""}
     </div>`;
   const list = block.querySelector("[data-calendar-rows]");
   if (!apps.length) {
-    list.appendChild(emptyState("Nessuna lezione programmata."));
+    list.appendChild(emptyState("Nessuna data."));
     return;
   }
   for (const a of apps) {
     const row = document.createElement("div");
-    row.className = "calendar-row";
+    row.className = "calendar-row calendar-row--compact";
     row.dataset.id = a.id;
     row.innerHTML = `
       <div class="calendar-row__info">
         <strong class="calendar-row__date"></strong>
         <span class="calendar-row__meta"></span>
       </div>
-      <span class="badge ${a.fatto ? "badge--ok" : "badge--neutral"}"></span>
       <div class="calendar-row__actions">
-        <button type="button" class="btn-small" data-action="modifica-appuntamento">Modifica</button>
-        ${!a.fatto ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna fatto</button>' : ""}
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-appuntamento">Elimina</button>
+        <button type="button" class="btn-tiny" data-action="modifica-appuntamento">Modifica</button>
+        <button type="button" class="btn-tiny btn-tiny--danger" data-action="elimina-appuntamento">Elimina</button>
       </div>`;
     row.querySelector(".calendar-row__date").textContent =
       (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
     row.querySelector(".calendar-row__meta").textContent =
-      "Istruttore: " + (a.istruttore || pk.istruttore || "—") + " · " + a.tipo;
-    row.querySelector(".badge").textContent = a.fatto ? "Fatto" : "Da fare";
+      (a.istruttore || pk.istruttore || "—") + " · " + a.tipo + " · " + (a.fatto ? "Fatto" : "Da fare");
     list.appendChild(row);
   }
 }
@@ -1503,50 +1546,27 @@ function lezioneGroup(pk) {
   group.dataset.id = pk.id;
   group.dataset.categoria = pk.categoria;
   const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
+  const ownLinked = linked && linked.clienteId === pk.clienteId ? linked : null;
   const apps = data.appuntamenti.filter(a => a.pacchettoId === pk.id);
-  const esaurito = pacchettoEsaurito(pk);
-  const payBadge = linked && linked.clienteId === pk.clienteId
-    ? statoBadge(linked)
-    : { cls: "badge--neutral", txt: "Senza pagamento" };
+  const payLabel = ownLinked ? statoPagamentoLabel(ownLinked) : "Senza pagamento";
+  const dateLabel = nextLezioneLabel(apps);
+  const metaParts = ["Lezioni " + pk.utilizzate + "/" + lezioniRimanenti(pk), payLabel];
+  if (dateLabel) metaParts.push(dateLabel);
   group.innerHTML = `
-    <div class="lezione-group__head">
-      <div class="lezione-group__title-wrap">
-        <strong class="lezione-group__title"></strong>
-        <div class="lezione-group__badges">
-          <span class="badge ${payBadge.cls}"></span>
-          <span class="badge badge--neutral" data-schedule-badge></span>
-        </div>
+    <div class="lezione-row">
+      <div class="lezione-row__main">
+        <strong class="lezione-row__title"></strong>
+        <div class="lezione-row__meta" data-meta></div>
       </div>
-      <div class="lezione-group__actions">
-        <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-pacchetto">Elimina</button>
+      <div class="lezione-row__actions">
+        <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica/Elimina</button>
+        <button type="button" class="btn-small" data-action="toggle-pagamento" aria-expanded="false">Pagamento</button>
       </div>
     </div>
-    <div class="lezione-grid">
-      <div class="lezione-block">
-        <h5>${pk.categoria === "singola" ? "Lezione" : "Pacchetto"}</h5>
-        <div class="lezione-meta" data-meta></div>
-        <div class="lezione-block__actions">
-          ${!esaurito ? '<button type="button" class="btn-small" data-action="consuma-lezione">Consuma lezione</button>' : ""}
-        </div>
-      </div>
-      <div class="lezione-block lezione-block--payments"></div>
-      <div class="lezione-block lezione-block--calendar"></div>
-    </div>`;
-  group.querySelector(".lezione-group__title").textContent = lezioneLabel(pk);
-  const badges = group.querySelectorAll(".lezione-group__badges .badge");
-  badges[0].textContent = payBadge.txt;
-  badges[1].textContent = apps.length + "/" + pk.lezioni + " lezioni";
-  const meta = group.querySelector("[data-meta]");
-  const lines = [
-    "Lezioni: " + pk.lezioni + " · Utilizzate: " + pk.utilizzate + " · Rimaste: " + lezioniRimanenti(pk),
-    "Prezzo: " + money(pk.prezzo),
-  ];
-  for (const line of lines) {
-    const div = document.createElement("div");
-    div.textContent = line;
-    meta.appendChild(div);
-  }
+    <div class="lezione-payment lezione-block--payments" hidden></div>
+    <div class="lezione-dates lezione-block--calendar"></div>`;
+  group.querySelector(".lezione-row__title").textContent = lezioneLabel(pk);
+  group.querySelector("[data-meta]").textContent = metaParts.join(" · ");
   renderPaymentBlock(group.querySelector(".lezione-block--payments"), pk);
   renderCalendarBlock(group.querySelector(".lezione-block--calendar"), pk);
   return group;
@@ -2708,7 +2728,27 @@ function printReport() {
 }
 
 
+function autoConsumeLezioni() {
+  const now = new Date();
+  let changed = false;
+  for (const pk of data.pacchetti) {
+    let expired = 0;
+    for (const a of data.appuntamenti) {
+      if (a.pacchettoId !== pk.id || !a.data || !a.ora) continue;
+      const when = new Date(a.data + "T" + a.ora + ":00");
+      if (!isNaN(when.getTime()) && when <= now) expired++;
+    }
+    const target = Math.min(pk.lezioni, Math.max(pk.utilizzate, expired));
+    if (target !== pk.utilizzate) {
+      pk.utilizzate = target;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function refresh() {
+  autoConsumeLezioni();
   renderClienti();
   renderArchivio();
   renderAppuntamenti();
@@ -2861,6 +2901,15 @@ function handleClick(e) {
     if (f) { f.hidden = true; f.reset(); }
     return;
   }
+  const deletePacchetto = e.target.closest("[data-delete-pacchetto]");
+  if (deletePacchetto) {
+    const panel = deletePacchetto.closest(".form-panel");
+    const f = panel ? panel.querySelector("form") : null;
+    const idField = f ? f.elements.namedItem("id") : null;
+    const pkId = Number(idField ? idField.value : 0);
+    if (pkId) deletePacchettoById(pkId);
+    return;
+  }
   const addAcconto = e.target.closest("[data-add-acconto]");
   if (addAcconto) { addInitialReceiptRow(addAcconto.closest(".form-panel")); return; }
   const removeAcconto = e.target.closest("[data-remove-acconto]");
@@ -2980,26 +3029,13 @@ function handleClick(e) {
         tipo: pk.categoria === "singola" ? (pk.tipo || "Addestramento") : "Addestramento",
       });
     } else if (act === "elimina-pacchetto") {
-      const plan = pacchettoDeletionPlan(id);
-      if (!plan) return;
-      const pk = plan.pacchetto;
-      const label = lezioneLabel(pk);
-      const contratti = plan.pagamenti.reduce((s, p) => s + p.importo, 0);
-      const items = [
-        { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati", extra: plan.pagamenti.length ? money(contratti) : "" },
-        { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
-        { n: plan.appuntamentiDaEliminare.length, singular: "appuntamento non svolto", plural: "appuntamenti non svolti" },
-      ];
-      const msg = confirmDeletionMessage(
-        "Eliminare " + label + " di " + clienteNome(pk.clienteId) +
-          (pk.categoria === "pacchetto" ? " (" + pk.lezioni + " lezioni)?" : "?"),
-        items, plan.warnings, ""
-      );
-      if (!confirm(msg)) return;
-      rememberUndo(label + " eliminato.");
-      deletePacchettoCascade(plan);
-      if (!commit(label + " eliminato con i dati collegati.")) { restoreUndoState(); return; }
-      offerUndo();
+      deletePacchettoById(id);
+    } else if (act === "toggle-pagamento") {
+      const group = action.closest(".lezione-group");
+      const panel = group ? group.querySelector(".lezione-block--payments") : null;
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      action.setAttribute("aria-expanded", String(!panel.hidden));
     } else if (act === "assegna-orfano") {
       const tipo = action.dataset.tipo;
       const oid = Number(action.dataset.id);
@@ -3664,3 +3700,7 @@ refresh();
   history.replaceState({ view: initial }, "", "#" + initial);
 })();
 initBanner();
+
+setInterval(() => {
+  if (autoConsumeLezioni() && saveData()) refresh();
+}, 60000);

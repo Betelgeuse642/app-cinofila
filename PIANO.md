@@ -1300,3 +1300,43 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase 37 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 38 — Output minimale e consumo automatico (completata e verificata localmente)
+
+## Richiesta
+
+- Output di pacchetto e lezione singola su una sola riga, con meno dati.
+- Due soli tasti in fondo: **Modifica/Elimina** e **Pagamento**.
+- Riga strutturata con: nome pacchetto/lezione, utilizzate/rimaste, stato pagamento, data.
+- Nei pacchetti, elenco compatto delle date con piccoli tasti Modifica/Elimina.
+- Consumo automatico delle lezioni alla scadenza, se non modificate o eliminate.
+
+## Implementazione effettiva
+
+- **Riga compatta**: ogni gruppo mostra titolo, `Lezioni utilizzate/rimaste`, stato pagamento (`Pagato`, `Da pagare`, `Parzialmente pagato`, `Da verificare`) e la prossima data (o l’unica data per la lezione singola).
+- **Due azioni**: `Modifica/Elimina` apre il form di modifica; `Pagamento` apre/chiude il pannello con contratto, incassato, saldo, ricevute e azioni di incasso.
+- **Eliminazione**: il form di modifica include il tasto **Elimina**, visibile solo in modifica; usa lo stesso piano di eliminazione con conferma e undo.
+- **Date compatte**: sotto la riga, elenco delle date con data/ora, istruttore, tipo e stato; piccoli tasti `Modifica` ed `Elimina`. Il tasto `+ Aggiungi lezione` resta disponibile finché non sono programmate tutte le lezioni.
+- **Consumo automatico**: `autoConsumeLezioni()` calcola le lezioni collegate con data/ora già scadute e porta `utilizzate` almeno a quel numero, senza superare `lezioni`. Viene eseguito al caricamento, a ogni `commit`, a ogni `refresh` e con un controllo periodico di 60 secondi; se cambia qualcosa viene salvato.
+- **Nessun tasto manuale** “Consuma lezione”: il consumo avviene solo allo scadere della data.
+- **Stili**: riga a colonna con azioni allineate in fondo a destra (larghezza piena su mobile), pannello pagamento separato da una linea, date in caratteri più piccoli, pulsanti `btn-tiny`, form elimina in rosso.
+
+## Test effettivi
+
+- Suite completa: **533 test superati, 0 fallimenti** (02/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **73/73**.
+- Aggiornati i test per il pannello Pagamento espandibile, l’eliminazione dal form, la riga compatta, l’elenco date e il consumo automatico.
+- Verifica manuale: riga unica, due tasti, pagamento espandibile, date compatte, eliminazione dal form, consumo automatico, persistenza, mobile senza overflow.
+
+## Problemi aperti / note
+
+- Il consumo automatico è incrementale: una lezione già scaduta resta consumata anche se viene modificata o eliminata successivamente. Modifiche/eliminazioni prima della scadenza evitano il consumo.
+- Il controllo automatico usa data e ora locali del dispositivo.
+- Il pannello Pagamento è chiuso per impostazione predefinita; i dettagli si vedono con il tasto Pagamento.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 38 completata e verificata localmente. Nessuna pubblicazione su GitHub.
