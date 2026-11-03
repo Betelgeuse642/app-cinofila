@@ -1377,3 +1377,46 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase 39 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 40 — Date in formato gg/mm/aaaa (completata e verificata localmente)
+
+## Richiesta
+
+- Uniformare tutte le date dell’applicazione al formato `gg/mm/aaaa`.
+- Correggere in particolare i campi dei form “Aggiungi pacchetto” e “Aggiungi lezione”, che mostravano `mm/gg/anno`.
+
+## Decisioni
+
+- I campi data non usano più `input[type=date]`, il cui formato dipende dalla lingua del browser.
+- Sono campi testuali con placeholder `gg/mm/aaaa`, `inputmode="numeric"`, massimo 10 caratteri e normalizzazione automatica al blur.
+- I dati restano memorizzati in ISO (`AAAA-MM-GG`); la conversione avviene solo nell’interfaccia.
+- L’input accetta anche date ISO o con separatori diversi, ma le normalizza in `gg/mm/aaaa`.
+
+## Implementazione effettiva
+
+- **Helper**: aggiunti `todayInput()` e `parseDateInput()`; `isoToDateLabel()` resta il formato di visualizzazione.
+- **Campi attivi**: date delle lezioni nel form pacchetto, data del form appuntamento nella scheda e nella vista globale, data incasso nel form pagamento. Convertito anche il vecchio form pagamento non più renderizzato.
+- **Form**: `toggleForm` imposta le date predefinite in `gg/mm/aaaa` e, in modifica, converte i valori ISO del record nel formato italiano.
+- **Calendario**: le righe data leggono e validano `gg/mm/aaaa`; i confronti con gli appuntamenti usano ISO.
+- **Incassi**: la data precompilata è `gg/mm/aaaa`; il submit converte in ISO.
+- **Normalizzazione**: al blur una data valida viene riscritta in `gg/mm/aaaa`; le date invalide vengono bloccate dalla validazione esistente.
+- **Nessuna modifica** a modello dati, export/import o logica di salvataggio.
+
+## Test effettivi
+
+- Suite completa: **536 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **76/76**.
+- Nuovi controlli in `test_fase30.py`: campi data testuali con placeholder `gg/mm/aaaa`, form pacchetto, lezione singola, appuntamento nella scheda e nella vista globale, data incasso.
+- Verifica manuale: digitazione `3/11/2026`, normalizzazione a `03/11/2026`, salvataggio ISO, riapertura in modifica e mobile.
+
+## Problemi aperti / note
+
+- Il selettore data nativo del browser è stato sostituito da un campo testuale guidato: non c’è un calendario popup.
+- Le date nei report, CSV e riepiloghi erano già `gg/mm/aaaa`.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 40 completata e verificata localmente. Nessuna pubblicazione su GitHub.

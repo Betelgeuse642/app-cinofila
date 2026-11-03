@@ -763,6 +763,14 @@ function onFilterChange(e) {
 document.addEventListener("input", onFilterChange);
 document.addEventListener("change", onFilterChange);
 
+// Normalizza le date digitate in gg/mm/aaaa quando il campo perde il focus.
+document.addEventListener("focusout", (e) => {
+  const el = e.target;
+  if (!el || !el.matches || !el.matches("input[data-date-input]")) return;
+  const iso = parseDateInput(el.value);
+  if (iso) el.value = isoToDateLabel(iso);
+});
+
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   const active = document.activeElement;
@@ -842,9 +850,29 @@ function money(n) {
 }
 
 function isoToDateLabel(iso) {
-  const parts = iso.split("-");
-  if (parts.length !== 3) return iso;
+  const parts = String(iso || "").split("-");
+  if (parts.length !== 3) return String(iso || "");
   return parts[2] + "/" + parts[1] + "/" + parts[0];
+}
+
+function todayInput() {
+  return isoToDateLabel(todayStr());
+}
+
+function parseDateInput(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  if (isIsoDate(s)) return s;
+  const m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (!m) return "";
+  let year = Number(m[3]);
+  if (year < 100) year += 2000;
+  const month = Number(m[2]);
+  const day = Number(m[1]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return "";
+  return String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
 }
 
 function addDaysIso(iso, days) {
@@ -1053,6 +1081,8 @@ const CARD_FORMS = {
   pacchetto: "form-cliente-pacchetto",
 };
 
+const DATE_INPUT_ATTRS = 'type="text" inputmode="numeric" placeholder="gg/mm/aaaa" maxlength="10" autocomplete="off" data-date-input';
+
 function pacchettoLabel(tipo) {
   const t = (tipo || "").trim();
   return !t || t.toLowerCase() === "pacchetto" ? "Pacchetto" : "Pacchetto " + t;
@@ -1084,7 +1114,7 @@ function pagamentoFormHtml(clienteId) {
         </label>
         <label>
           <span>Data contratto</span>
-          <input type="date" name="data" required />
+          <input ${DATE_INPUT_ATTRS} name="data" required />
         </label>
         <label>
           <span>Descrizione</span>
@@ -1097,7 +1127,7 @@ function pagamentoFormHtml(clienteId) {
           </label>
           <label>
             <span>Data incasso iniziale</span>
-            <input type="date" name="dataIncasso" />
+            <input ${DATE_INPUT_ATTRS} name="dataIncasso" />
           </label>
         </div>
         <div class="form-actions">
@@ -1118,7 +1148,7 @@ function appuntamentoFormHtml(clienteId) {
         <input type="hidden" name="pacchettoId" value="0" />
         <label>
           <span>Data</span>
-          <input type="date" name="data" required />
+          <input ${DATE_INPUT_ATTRS} name="data" required />
         </label>
         <label>
           <span>Ora</span>
@@ -1320,11 +1350,12 @@ function refreshPacchettoForm(panel) {
   let filled = 0;
   let conflicts = 0;
   for (const row of rows) {
-    const date = row.querySelector('[data-field="data"]').value;
+    const dateText = row.querySelector('[data-field="data"]').value;
+    const date = parseDateInput(dateText);
     const time = row.querySelector('[data-field="ora"]').value;
     const status = row.querySelector("[data-row-status]");
     row.classList.remove("is-conflict", "is-incomplete", "is-filled");
-    if (!date && !time) {
+    if (!dateText && !time) {
       if (status) status.textContent = "Da programmare";
       continue;
     }
@@ -1377,7 +1408,7 @@ function addScheduleRow(panel, values) {
   row.dataset.scheduleRow = "";
   row.innerHTML = `
     <label class="dynamic-row__field"><span>Data</span>
-      <input type="date" data-field="data" />
+      <input ${DATE_INPUT_ATTRS} data-field="data" />
     </label>
     <label class="dynamic-row__field"><span>Ora</span>
       <input type="time" data-field="ora" />
@@ -1386,7 +1417,8 @@ function addScheduleRow(panel, values) {
       <input type="text" list="istruttori-suggeriti" data-field="istruttore" />
     </label>
     <span class="dynamic-row__status" data-row-status></span>`;
-  row.querySelector('[data-field="data"]').value = (values && values.data) || "";
+  const rawDate = (values && values.data) || "";
+  row.querySelector('[data-field="data"]').value = isIsoDate(rawDate) ? isoToDateLabel(rawDate) : rawDate;
   row.querySelector('[data-field="ora"]').value = (values && values.ora) || "";
   row.querySelector('[data-field="istruttore"]').value = (values && values.istruttore) || defaultInstructor;
   box.appendChild(row);
@@ -1415,7 +1447,7 @@ function readInitialReceipts(panel) {
 
 function readScheduleRows(panel) {
   return [...(panel ? panel.querySelectorAll("[data-schedule-row]") : [])].map(row => ({
-    data: row.querySelector('[data-field="data"]').value,
+    data: parseDateInput(row.querySelector('[data-field="data"]').value),
     ora: row.querySelector('[data-field="ora"]').value,
     istruttore: row.querySelector('[data-field="istruttore"]').value.trim(),
   })).filter(r => r.data || r.ora);
@@ -1480,7 +1512,7 @@ function renderPaymentBlock(block, pk) {
       <label><span>Importo incassato (€)</span>
         <input type="number" name="importo" min="0.01" step="0.01" max="${linked.incassoDaVerificare ? linked.importo : saldo}" required />
       </label>
-      <label><span>Data incasso</span><input type="date" name="data" required /></label>
+      <label><span>Data incasso</span><input ${DATE_INPUT_ATTRS} name="data" required /></label>
       <label><span>Nota (opzionale)</span><input type="text" name="nota" list="note-incasso-suggerite" autocomplete="off" /></label>
       <div class="form-actions">
         <button type="submit" class="btn-action btn-primary">Salva incasso</button>
@@ -2828,7 +2860,9 @@ function toggleForm(id, show, record) {
   if (record) {
     for (const [key, value] of Object.entries(record)) {
       const el = f.elements.namedItem(key);
-      if (el && typeof value !== "object" && value !== null) el.value = String(value);
+      if (el && typeof value !== "object" && value !== null) {
+        el.value = el.matches("[data-date-input]") ? isoToDateLabel(String(value)) : String(value);
+      }
     }
     if (kind === "appuntamento") {
       const sel = f.elements.namedItem("tipo");
@@ -2842,9 +2876,9 @@ function toggleForm(id, show, record) {
     }
   }
   // Date predefinite per i nuovi inserimenti (l'utente può cambiarle).
-  for (const name of ["data"]) {
+  for (const name of ["data", "dataIncasso"]) {
     const el = f.elements.namedItem(name);
-    if (el && !el.value && !record) el.value = todayStr();
+    if (el && !el.value && !record) el.value = todayInput();
   }
   if (kind === "appuntamento") {
     const ora = f.elements.namedItem("ora");
@@ -2955,7 +2989,7 @@ function handleClick(e) {
         form.hidden = !form.hidden;
         if (!form.hidden) {
           const date = form.elements.namedItem("data");
-          if (date && !date.value) date.value = todayStr();
+          if (date && !date.value) date.value = todayInput();
           const amount = form.elements.namedItem("importo");
           if (amount && !amount.value) {
             const p = data.pagamenti.find(x => x.id === id);
@@ -3274,10 +3308,10 @@ document.addEventListener("submit", (e) => {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
     const importo = Math.round(Number(fd.get("importo")) * 100) / 100;
-    const data_ = (fd.get("data") || "").toString();
+    const data_ = parseDateInput(fd.get("data"));
     const descrizione = (fd.get("descrizione") || "").toString().trim();
     const acconto = Math.round((Number(fd.get("acconto")) || 0) * 100) / 100;
-    let dataIncasso = (fd.get("dataIncasso") || "").toString();
+    let dataIncasso = parseDateInput(fd.get("dataIncasso"));
     if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!data_ || !(importo > 0)) { setStatus("Completa data e importo.", true); return; }
     if (!isIsoDate(data_)) { setStatus("La data del contratto non è valida.", true); return; }
@@ -3502,7 +3536,7 @@ document.addEventListener("submit", (e) => {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
     const pacchettoId = Number(fd.get("pacchettoId") || 0);
-    const data_ = (fd.get("data") || "").toString();
+    const data_ = parseDateInput(fd.get("data"));
     const ora = (fd.get("ora") || "").toString();
     const tipo = (fd.get("tipo") || "").toString();
     const istruttore = (fd.get("istruttore") || "").toString().trim().slice(0, 60);
@@ -3556,7 +3590,7 @@ document.addEventListener("submit", (e) => {
   if (kind === "incasso") {
     const pagamentoId = Number(fd.get("pagamentoId"));
     const importo = Math.round(Number(fd.get("importo")) * 100) / 100;
-    const data_ = (fd.get("data") || "").toString();
+    const data_ = parseDateInput(fd.get("data"));
     const nota = (fd.get("nota") || "").toString().trim();
     const p = data.pagamenti.find(x => x.id === pagamentoId);
     if (!p) { setStatus("Pagamento non trovato.", true); return; }

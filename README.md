@@ -58,7 +58,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py
 ```
 
-Ultima verifica: **533 test superati, 0 fallimenti** (03/11/2026).
+Ultima verifica: **536 test superati, 0 fallimenti** (03/11/2026).
 
 ## Repository e pubblicazione
 
@@ -170,6 +170,7 @@ git push origin v1.1.0
 - Il consumo delle lezioni è automatico alla scadenza: una lezione non modificata o eliminata prima della data incrementa le utilizzate. Non c’è più il tasto manuale “Consuma lezione”.
 - Il tipo di pacchetto è facoltativo: se vuoto viene mostrato come “Pacchetto”.
 - La data di vendita è automatica (oggi) e non viene chiesta nel form; l’istruttore si inserisce solo nelle singole date delle lezioni.
+- Tutte le date si inseriscono e si mostrano come `gg/mm/aaaa`; il browser non usa il selettore data nativo, ma il campo guidato con placeholder e normalizzazione.
 - Gli acconti iniziali hanno solo l’importo: data odierna e nota “Acconto N” sono automatiche.
 - Alla prima apertura, i vecchi appuntamenti e pagamenti senza pacchetto vengono convertiti in lezioni singole; anche i collegamenti a pacchetti inesistenti vengono scollegati. I dati orfani restano nel pannello dedicato.
 - Non esistono rate pianificate con scadenza, registro istruttori o sincronizzazione con calendari esterni.
