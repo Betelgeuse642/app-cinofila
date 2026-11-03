@@ -22,7 +22,7 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Resoconto a tre sezioni: **Riepilogo**, **Lezioni**, **Collaboratori**. Il registro collaboratori è derivato dagli appuntamenti con `fatto: true`, con una giornata per data distinta, fallback all’istruttore del pacchetto e filtri per collaboratore, mese, anno e intervallo; non salva nuovi campi. Il consumo automatico delle lezioni scadute imposta `fatto` e aggiorna registro e KPI.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Fasi 18–43 completate e verificate localmente sul branch `feat/fase-30-36-scheda-due-sezioni`; nessuna pubblicazione.
+- Fasi 8–17 completate e pubblicate. Fasi 18–43 completate, verificate e pubblicate su `main` (merge `72dd2b8`); GitHub Pages ha pubblicato il commit.
 - Ultima verifica dichiarata: **624 test superati, 0 fallimenti** (03/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.

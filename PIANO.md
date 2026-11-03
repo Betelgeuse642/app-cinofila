@@ -1584,8 +1584,8 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 - L'Archivio lezioni è in sola consultazione: per modificare una lezione archiviata si usa la scheda cliente.
 - L'archiviazione segue la data locale del sistema; il passaggio avviene al primo controllo dopo la mezzanotte (entro 60 secondi) o al ritorno sulla scheda.
 - Le lezioni archiviate restano nei pacchetti e nei conteggi del Resoconto/Collaboratori.
-- Branch locale; nessun push, merge o pubblicazione.
+- Pubblicata su `main` con merge `72dd2b8`; GitHub Pages ha pubblicato il commit.
 
 ## Prossimo passo / Fermo
 
-- Fase 43 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+- Fase 43 completata, integrata su `main` e pubblicata su GitHub Pages.
