@@ -1557,14 +1557,14 @@ function lezioneGroup(pk) {
   if (dateLabel) metaParts.push(dateLabel);
   group.innerHTML = `
     <div class="lezione-row">
-      <div class="lezione-row__main">
+      <div class="lezione-row__top">
         <strong class="lezione-row__title"></strong>
-        <div class="lezione-row__meta" data-meta></div>
+        <div class="lezione-row__actions">
+          <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica/Elimina</button>
+          <button type="button" class="btn-small" data-action="toggle-pagamento" aria-expanded="false">Pagamento</button>
+        </div>
       </div>
-      <div class="lezione-row__actions">
-        <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica/Elimina</button>
-        <button type="button" class="btn-small" data-action="toggle-pagamento" aria-expanded="false">Pagamento</button>
-      </div>
+      <div class="lezione-row__meta" data-meta></div>
     </div>
     <div class="lezione-payment lezione-block--payments" hidden></div>
     <div class="lezione-dates lezione-block--calendar"></div>`;

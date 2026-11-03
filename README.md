@@ -20,7 +20,7 @@ Il sito è pubblico e non ha autenticazione. I dati restano nel browser dell'ute
 
 ## Funzioni principali
 
-- **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni elemento è una riga compatta con lezioni utilizzate/rimaste, stato pagamento e data, più i tasti **Modifica/Elimina** e **Pagamento**.
+- **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni elemento ha un’intestazione compatta: titolo e tasti **Modifica/Elimina** e **Pagamento** sulla stessa riga, informazioni (lezioni utilizzate/rimaste, stato pagamento, data) sotto, poi elenco delle lezioni.
 - **Archivio**: clienti archiviati con ricerca, scheda completa in sola consultazione, riattivazione ed eliminazione.
 - **Pagamenti** (dentro ogni pacchetto/lezione): totale, acconti multipli registrati liberamente (Acconto 1, Acconto 2, Saldo) senza scadenze pianificate, saldo e stato derivato `Pagato`, `Parziale`, `Da pagare`, `Da verificare`.
 - **Calendario** (dentro ogni pacchetto/lezione): date scelte singolarmente, ora e istruttore per lezione; aggiunta, modifica, eliminazione e stato fatto/da fare. L’istruttore può essere diverso per ogni lezione. Nei pacchetti le date sono in un elenco compatto con piccoli tasti Modifica/Elimina.
@@ -58,7 +58,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py
 ```
 
-Ultima verifica: **533 test superati, 0 fallimenti** (02/11/2026).
+Ultima verifica: **533 test superati, 0 fallimenti** (03/11/2026).
 
 ## Repository e pubblicazione
 

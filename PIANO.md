@@ -1341,3 +1341,39 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase 38 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 39 — Intestazione compatta delle schede (completata e verificata localmente)
+
+## Richiesta
+
+- Titolo del pacchetto/lezione e tasti `Modifica/Elimina` e `Pagamento` sulla stessa riga.
+- Informazioni (lezioni, stato pagamento, data/ora) su una seconda riga con carattere più piccolo.
+- Divisore sottile e inizio immediato dell’elenco delle lezioni.
+- Ridurre l’altezza complessiva, senza cambiare dati, funzionalità o logica dei pulsanti.
+- Stesso layout per la lezione singola; su smartphone i tasti possono andare a capo.
+
+## Implementazione effettiva
+
+- **HTML**: in `lezioneGroup` l’intestazione è ora `lezione-row__top` con titolo e azioni sulla stessa riga; `lezione-row__meta` è una seconda riga separata.
+- **CSS**: `.lezione-row` non è più una colonna con gap; `.lezione-row__top` è un flex orizzontale con wrap; i tasti hanno altezza e padding ridotti; il meta ha font `0.82rem` e margine minimo.
+- **Spaziatura**: ridotti i margini/padding di `.lezione-dates`, `.lezione-payment` e delle azioni; il divisore è subito sotto il meta e l’elenco parte senza spazi vuoti.
+- **Responsive**: a 40rem i tasti diventano pieni e vanno a capo sotto il titolo, mantenendo la leggibilità e i target touch.
+- **Nessuna modifica** a modello dati, azioni, pannello pagamento, eliminazione o consumo automatico.
+
+## Test effettivi
+
+- Suite completa: **533 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **73/73**.
+- Verifica visiva desktop e mobile: intestazione su due righe, divisore subito sotto, elenco date immediato, nessun overflow.
+
+## Problemi aperti / note
+
+- Su schermi molto stretti i due tasti occupano una riga ciascuno; è il comportamento richiesto per evitare compressioni.
+- Nessuna modifica a dati o funzionalità.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 39 completata e verificata localmente. Nessuna pubblicazione su GitHub.

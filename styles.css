@@ -825,48 +825,58 @@ a { color: inherit; }
 }
 
 .lezione-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-2xs);
+  display: block;
 }
 
-.lezione-row__main {
+.lezione-row__top {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3xs);
-  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2xs);
+  flex-wrap: wrap;
 }
 
 .lezione-row__title {
+  min-width: 0;
   font-family: var(--font-display);
   font-size: var(--step-1);
   font-weight: 600;
+  line-height: 1.15;
 }
 
 .lezione-row__meta {
+  margin-top: 0.15rem;
   color: var(--ink-2);
-  font-size: var(--step--1);
+  font-size: 0.82rem;
+  line-height: 1.25;
 }
 
 .lezione-row__actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: var(--space-2xs);
+  gap: var(--space-3xs);
+  margin-left: auto;
+}
+
+.lezione-row__actions .btn-small {
+  margin-top: 0;
+  min-height: 2rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.82rem;
 }
 
 .lezione-payment {
-  margin-top: var(--space-s);
-  padding-top: var(--space-s);
+  margin-top: var(--space-xs);
+  padding-top: var(--space-2xs);
   border-top: 1px solid var(--line);
 }
 
 .lezione-payment[hidden] { display: none; }
 
 .lezione-dates {
-  margin-top: var(--space-s);
-  padding-top: var(--space-s);
+  margin-top: var(--space-2xs);
+  padding-top: var(--space-3xs);
   border-top: 1px solid var(--line);
 }
 
@@ -922,6 +932,8 @@ a { color: inherit; }
   gap: var(--space-2xs);
   margin-top: var(--space-2xs);
 }
+
+.lezione-block__actions .btn-small { margin-top: 0; }
 
 .payment-head {
   display: flex;
@@ -1023,9 +1035,9 @@ a { color: inherit; }
 @media (max-width: 40rem) {
   .dynamic-row,
   .dynamic-row--payment { grid-template-columns: 1fr; }
-  .lezione-row { align-items: flex-start; }
-  .lezione-row__actions { width: 100%; }
-  .lezione-row__actions .btn-small { flex: 1; }
+  .lezione-row__top { align-items: flex-start; }
+  .lezione-row__actions { width: 100%; justify-content: flex-start; }
+  .lezione-row__actions .btn-small { flex: 1; min-height: 2.5rem; }
 }
 
 .detail-panel .list {
