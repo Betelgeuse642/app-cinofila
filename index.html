@@ -40,7 +40,7 @@
       <a href="#archivio" class="home-btn" data-nav="archivio">
         <span class="home-btn__no" aria-hidden="true">04</span>
         <span class="home-btn__label">Archivio</span>
-        <span class="home-btn__hint">Clienti archiviati</span>
+        <span class="home-btn__hint">Clienti archiviati<br />Lezioni archiviate</span>
         <span id="archivio-count" class="home-btn__count" hidden></span>
         <span class="home-btn__arrow" aria-hidden="true">→</span>
       </a>
@@ -125,6 +125,7 @@
       <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
       <h2>Appuntamenti</h2>
     </header>
+    <p class="section-intro">Le lezioni di oggi e future. Le lezioni svolte o scadute passano automaticamente in Archivio a fine giornata.</p>
     <div class="filter-bar">
       <input id="filtro-appuntamenti" type="search" placeholder="Cerca cliente, istruttore o tipo" aria-label="Cerca appuntamenti" />
       <select id="filtro-appuntamenti-stato" aria-label="Filtra appuntamenti per stato">
@@ -136,7 +137,6 @@
         <option value="">Tutte le date</option>
         <option value="oggi">Oggi</option>
         <option value="7">Prossimi 7 giorni</option>
-        <option value="passati">Passati</option>
       </select>
       <select id="filtro-appuntamenti-categoria" aria-label="Filtra appuntamenti per tipo">
         <option value="">Pacchetti e lezioni singole</option>
@@ -153,7 +153,15 @@
         <p class="form-hint" data-appuntamento-info></p>
         <label>
           <span>Data</span>
-          <input type="text" name="data" inputmode="numeric" placeholder="gg/mm/aaaa" maxlength="10" autocomplete="off" data-date-input required />
+          <span class="date-field">
+            <input type="text" name="data" inputmode="numeric" placeholder="gg/mm/aaaa" maxlength="10" autocomplete="off" data-date-input required />
+            <button type="button" class="date-picker-btn" data-date-picker aria-label="Apri calendario">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M8 3v4M16 3v4M3 10h18"></path>
+              </svg>
+            </button>
+          </span>
         </label>
         <label>
           <span>Ora</span>
@@ -188,12 +196,32 @@
       <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
       <h2>Archivio</h2>
     </header>
-    <p class="section-intro">I clienti archiviati restano consultabili con tutto il loro storico. Puoi riattivarli o eliminarli definitivamente.</p>
-    <div class="filter-bar">
-      <input id="filtro-archivio" type="search" placeholder="Cerca un cliente archiviato" aria-label="Cerca nell'archivio" />
-    </div>
-    <div id="archivio-dettaglio" class="detail-panel" role="region" aria-labelledby="archivio-dettaglio-title" tabindex="-1" hidden></div>
-    <ul id="archivio-list" class="list"></ul>
+    <p class="section-intro">Clienti archiviati e lezioni svolte o scadute. Le lezioni di oggi passano qui dopo la fine della giornata.</p>
+
+    <section class="archive-section" aria-labelledby="archivio-clienti-title">
+      <div class="archive-section__head">
+        <h3 id="archivio-clienti-title">Clienti archiviati</h3>
+        <span id="archivio-clienti-count" class="archive-count" aria-live="polite"></span>
+      </div>
+      <p class="archive-section__hint">I clienti archiviati restano consultabili con tutto il loro storico. Puoi riattivarli o eliminarli definitivamente.</p>
+      <div class="filter-bar">
+        <input id="filtro-archivio" type="search" placeholder="Cerca un cliente archiviato" aria-label="Cerca un cliente archiviato" />
+      </div>
+      <div id="archivio-dettaglio" class="detail-panel" role="region" aria-labelledby="archivio-dettaglio-title" tabindex="-1" hidden></div>
+      <ul id="archivio-list" class="list"></ul>
+    </section>
+
+    <section class="archive-section" aria-labelledby="archivio-lezioni-title">
+      <div class="archive-section__head">
+        <h3 id="archivio-lezioni-title">Lezioni archiviate</h3>
+        <span id="archivio-lezioni-count" class="archive-count" aria-live="polite"></span>
+      </div>
+      <p class="archive-section__hint">Le lezioni svolte o scadute escono da Appuntamenti a fine giornata e restano qui consultabili.</p>
+      <div class="filter-bar">
+        <input id="filtro-archivio-lezioni" type="search" placeholder="Cerca cliente, istruttore, tipo o data" aria-label="Cerca una lezione archiviata" />
+      </div>
+      <ul id="archivio-lezioni-list" class="list archive-lessons"></ul>
+    </section>
   </main>
 
   <!-- =========== RESOCONTO =========== -->
@@ -208,17 +236,15 @@
         <input id="file-import" type="file" accept=".json,application/json" hidden />
       </div>
     </header>
-    <div class="resoconto-mese-row">
-      <label for="resoconto-mese">Mese di riferimento</label>
-      <select id="resoconto-mese" aria-label="Mese di riferimento del resoconto"></select>
-    </div>
-    <div class="resoconto-mese-row">
-      <label for="resoconto-cliente">Cliente</label>
-      <select id="resoconto-cliente" aria-label="Cliente del resoconto"></select>
-    </div>
-    <div class="resoconto-csv-actions">
-      <button id="btn-csv-incassi" class="btn-action" type="button">Esporta CSV incassi</button>
-      <button id="btn-csv-pagamenti" class="btn-action" type="button">Esporta CSV pagamenti</button>
+    <div class="resoconto-filters" role="group" aria-label="Filtri del resoconto">
+      <label class="resoconto-filter" for="resoconto-mese">
+        <span>Mese</span>
+        <select id="resoconto-mese" aria-label="Mese di riferimento del resoconto"></select>
+      </label>
+      <label class="resoconto-filter" for="resoconto-cliente">
+        <span>Cliente</span>
+        <select id="resoconto-cliente" aria-label="Cliente del resoconto"></select>
+      </label>
     </div>
     <div id="resoconto" class="resoconto"></div>
 
@@ -237,6 +263,8 @@
 
   <!-- Report stampabile (Fase 7): nascosto a schermo, visibile solo in stampa/PDF. -->
   <section id="report-print" class="report"></section>
+
+  <input type="date" id="date-picker-helper" class="date-picker-helper" tabindex="-1" aria-hidden="true" aria-label="Selettore data" />
 
   <script src="app.js"></script>
 </body>

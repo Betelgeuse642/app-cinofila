@@ -11,17 +11,19 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
 - Scheda cliente con due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni gruppo è una scheda compatta con intestazione su due righe: titolo e azioni (`Modifica/Elimina`, `Pagamento`) sulla stessa riga, informazioni (lezioni utilizzate/rimaste, stato pagamento, data) sotto, poi divisore sottile e calendario. Pagamento espandibile; per i pacchetti elenco compatto delle date con piccoli tasti Modifica/Elimina.
 - Date delle lezioni scelte individualmente, istruttore indicato per ogni lezione (senza campo separato sul pacchetto); data di vendita automatica; acconti iniziali senza data/nota, con etichetta automatica.
-- Tutti i campi data usano il formato `gg/mm/aaaa` con normalizzazione al blur; i valori restano memorizzati in ISO (`AAAA-MM-GG`).
+- Tutti i campi data usano il formato `gg/mm/aaaa` con normalizzazione al blur, pulsante calendario affiancato e selettore nativo condiviso; i valori restano memorizzati in ISO (`AAAA-MM-GG`).
 - Consumo automatico delle lezioni alla scadenza: se una lezione non viene modificata o eliminata prima della data, incrementa le lezioni utilizzate del pacchetto/lezione; il dato viene salvato su caricamento, salvataggio e controllo periodico.
 - Home con quattro pulsanti (**Scheda cliente**, **Appuntamenti**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `appuntamenti`, `archivio`, `resoconto`. `#appuntamenti` è una vista reale; gli hash legacy `#pagamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
+- Archivio diviso in **Archivio clienti** e **Archivio lezioni**. Le lezioni con data precedente a oggi escono da Appuntamenti e compaiono nell’archivio lezioni, raggruppate per giorno, con tag Fatto/Scaduta; aggiornamento automatico al cambio giornata senza reload.
 - Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto/lezione (pagamenti, incassi e appuntamenti non svolti; quelli svolti restano senza collegamento); conferma con conteggi e avvisi, operazione annullabile.
 - Nessun dato di esempio: il primo avvio è vuoto e non viene scritto nulla automaticamente.
-- Ricerca/filtri su Clienti, Archivio e Appuntamenti; agenda globale raggruppata per giorno, con filtri per periodo, stato e categoria.
+- Ricerca/filtri su Clienti, Archivio clienti, Archivio lezioni e Appuntamenti; agenda globale di oggi e future, raggruppata per giorno, con filtri per periodo, stato e categoria.
 - Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
+- Resoconto a tre sezioni: **Riepilogo**, **Lezioni**, **Collaboratori**. Il registro collaboratori è derivato dagli appuntamenti con `fatto: true`, con una giornata per data distinta, fallback all’istruttore del pacchetto e filtri per collaboratore, mese, anno e intervallo; non salva nuovi campi. Il consumo automatico delle lezioni scadute imposta `fatto` e aggiorna registro e KPI.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Fasi 18–40 completate e verificate localmente sul branch `feat/fase-30-36-scheda-due-sezioni`; nessuna pubblicazione.
-- Ultima verifica dichiarata: **536 test superati, 0 fallimenti** (03/11/2026).
+- Fasi 8–17 completate e pubblicate. Fasi 18–43 completate e verificate localmente sul branch `feat/fase-30-36-scheda-due-sezioni`; nessuna pubblicazione.
+- Ultima verifica dichiarata: **624 test superati, 0 fallimenti** (03/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -60,11 +62,13 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase8.py         # 37
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase9.py         # 33
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase10.py        # 43
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase11.py        # 46
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 31
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py        # 32
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py        # 51
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py        # 49
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py        # 50
-PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py        # 76
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py        # 78
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase42.py        # 53
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase43.py        # 31
 ```
 
 Esegui tutte le suite dopo modifiche a modello dati, rendering, filtri, report o accessibilità, e riporta i conteggi effettivi.

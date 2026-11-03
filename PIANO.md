@@ -1420,3 +1420,172 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase 40 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 41 — Calendario affiancato ai campi data (completata e verificata localmente)
+
+## Richiesta
+
+- Affiancare un calendario ai campi data durante la compilazione della scheda, per scegliere le date più rapidamente.
+- Mantenere la digitazione manuale in `gg/mm/aaaa` e il formato ISO nei dati.
+
+## Decisioni
+
+- Un solo input `type=date` nascosto (`#date-picker-helper`) serve tutti i campi data, evitando componenti duplicati.
+- Ogni campo data visibile resta testuale e ha accanto un pulsante con icona calendario.
+- Il pulsante apre il selettore nativo con `showPicker()` quando disponibile; altrimenti usa `focus()`/`click()`.
+- La data scelta viene convertita in `gg/mm/aaaa`, scritta nel campo visibile e notificata con eventi `input` e `change`.
+- Nessuna nuova dipendenza e nessuna modifica al modello dati o alla persistenza.
+
+## Implementazione effettiva
+
+- **Helper condiviso**: aggiunti `CALENDAR_ICON`, `dateFieldHtml()` e `openDatePicker()` in `app.js`; l'input nativo nascosto è in `index.html`.
+- **Campi coperti**: date delle lezioni nel form pacchetto, data del form appuntamento nella scheda e nella vista globale, data incasso nel pannello pagamento.
+- **Sincronizzazione**: il listener `change` dell'helper aggiorna il campo attivo, mantiene il formato italiano e riporta il focus sul campo.
+- **Layout**: `.date-field` affianca input e pulsante; le righe data usano `.dynamic-row--schedule`: su desktop Data, Ora, Istruttore e stato stanno sulla stessa riga, sotto i 48rem passano a due righe e su mobile a colonna singola.
+- **Leggibilità**: il campo data ha padding orizzontale ridotto e testo a `--step--1`, così `gg/mm/aaaa` resta visibile anche a 375 px.
+- **Stile**: pulsante calendario con bordo, hover, focus visibile e icona SVG inline coerente con il resto dell'interfaccia.
+- **Nessuna modifica** a salvataggio, export/import, report, eliminazioni o consumo automatico delle lezioni.
+
+## Test effettivi
+
+- Suite completa: **538 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**.
+- Nuovi controlli in `test_fase30.py`: presenza del pulsante calendario nei form, helper `type=date`, selezione che aggiorna il campo visibile in `gg/mm/aaaa`, campo data incasso con calendario.
+- Verifica manuale: apertura del calendario dal pulsante, selezione di una data, normalizzazione `5/12/2026` → `05/12/2026`, assenza di errori console, layout desktop e mobile 375 px senza overflow.
+
+## Problemi aperti / note
+
+- L'aspetto del selettore nativo dipende dal browser; il fallback senza `showPicker()` può richiedere un ulteriore tocco sul campo.
+- Il calendario è un aiuto alla compilazione: la validazione e il salvataggio restano quelli del campo testuale.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 41 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 42 — Resoconto semplificato e sezione Collaboratori (completata e verificata localmente)
+
+## Analisi della sezione attuale
+
+- Filtri: mese (12 mesi a ritroso) e cliente; i filtri aggiornano l'intera vista.
+- Riepilogo: 6 card (incassato, crediti, pagamenti da verificare, appuntamenti, clienti attivi, trend incassi), più note di attenzione.
+- Elenco sempre visibile dell'incidenza incassi per cliente, totale lezioni rimanenti e relativi avvisi.
+- Azioni CSV incassi/pagamenti e report stampabile separato; backup e ripristino nella stessa vista.
+- Dati già disponibili: `data.incassi`, `data.pagamenti`, `data.pacchetti`, `data.appuntamenti`.
+- Le lezioni svolte sono gli appuntamenti con `fatto === true`; istruttore e data sono già presenti sull'appuntamento, con fallback all'istruttore del pacchetto.
+- Non esiste un registro collaboratori separato e non serve crearlo: le giornate si ricavano dai dati esistenti.
+
+## Nuova organizzazione
+
+1. **Riepilogo** — tre indicatori essenziali:
+   - incassato del periodo;
+   - crediti residui al fine periodo;
+   - lezioni svolte nel periodo, con totale programmate.
+   - Trend incassi come nota compatta sotto l'incassato, non come card separata.
+2. **Lezioni** — riepilogo di svolte, da svolgere e lezioni rimanenti; avvisi su pagamenti da verificare e incassi senza data.
+   - Dettagli espandibili:
+     - incidenza incassi per cliente;
+     - lezioni rimanenti e nota sui crediti;
+     - pulsanti CSV incassi e pagamenti.
+3. **Collaboratori** — registro derivato automaticamente:
+   - filtro per collaboratore, mese, anno e intervallo di date (l'intervallo ha precedenza su mese/anno);
+   - totale collaboratori, giornate e lezioni del periodo;
+   - scheda compatta per collaboratore con giornate totali e lezioni totali;
+   - dettaglio espandibile delle date, con numero di lezioni per giornata;
+   - ulteriore dettaglio delle singole attività (ora, cliente, tipo, lezione).
+
+## Regole del registro collaboratori
+
+- Fonte unica: appuntamenti con `fatto === true` e data valida; nessun nuovo campo salvato. Il consumo automatico delle lezioni scadute imposta `fatto = true`, quindi registro e KPI si aggiornano da soli.
+- Nome: `a.istruttore`, altrimenti `pk.istruttore`; se assente, gruppo "Senza istruttore" con avviso.
+- Giornate: una per data distinta per collaboratore, anche con più lezioni nello stesso giorno.
+- Lezioni non svolte o eliminate non generano giornate. Una lezione svolta rimasta senza collegamento viene comunque conteggiata come “Senza lezione”, perché la giornata di lavoro è avvenuta.
+- Modifiche, spostamenti ed eliminazioni aggiornano il registro al successivo render perché tutto è derivato.
+- Confronto nomi senza distinzione tra maiuscole/minuscole; visualizzazione del primo nome incontrato.
+- Nessuna duplicazione di dati e nessuna modifica al modello `cinofilo-data-v1`.
+
+## Implementazione effettiva
+
+- **Riepilogo**: tre card (Incassato, Crediti residui, Lezioni svolte); trend incassi come meta della prima card; rimosse le card clienti attivi, appuntamenti e pagamenti da verificare come indicatori separati.
+- **Lezioni**: chip sintetiche per lezioni da svolgere e rimanenti; avvisi compatti su pagamenti legacy e incassi senza data; dettaglio espandibile con incassi per cliente, nota sui crediti e pulsanti CSV. Il conteggio delle svolte resta nel Riepilogo per evitare duplicazioni.
+- **Collaboratori**: sezione con filtri indipendenti (collaboratore, mese, anno, Dal/Al), riepilogo del periodo, schede compatte per collaboratore e dettagli annidati per data e attività.
+- **Registro derivato**: `collaboratorRegistry()` aggrega gli appuntamenti con `fatto === true`; `filteredCollaboratorRegistry()` applica i filtri. Nessun dato viene scritto in `localStorage`.
+- **Consumo automatico**: `autoConsumeLezioni()` segna `fatto = true` per ogni appuntamento scaduto, aggiorna `utilizzate` e restituisce `changed`; caricamento, salvataggio, comandi e controllo periodico salvano e ridisegnano registro e KPI.
+- **Fallback istruttore**: usa `a.istruttore`, poi `pk.istruttore`; se manca entrambi, gruppo “Senza istruttore” con avviso. Eliminando un pacchetto, l'istruttore viene copiato sugli appuntamenti svolti prima di azzerare il collegamento.
+- **Interfaccia**: filtri mese/cliente in alto; collaboratori indipendenti con etichetta del periodo; `<details>` nativi; focus ripristinato dopo i cambi filtro; stato del dettaglio pagamenti mantenuto.
+- **Accessibilità**: `role="group"` sui filtri, `role="status"` sul riepilogo collaboratori, `role="alert"` sull'intervallo non valido, etichette “Dal”/“Al” coerenti; font dei campi data dei filtri a 1rem su mobile per evitare lo zoom iOS.
+- **Calendario**: il selettore condiviso parte vuoto se il campo è vuoto, così anche la scelta di “oggi” genera un cambio.
+- **Invariati**: report stampabile, CSV, export/import JSON, backup, calcolo incassi/crediti e eliminazioni con undo.
+
+## Test effettivi
+
+- Suite completa: **592 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **69/69**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**, Fase 42 **53/53**.
+- `test_fase42.py` copre: tre sezioni e KPI, assenza delle vecchie card, dettaglio pagamenti, registro con giornate uniche, fallback istruttore, gruppo senza istruttore, esclusione delle lezioni non svolte, dettagli attività, filtri collaboratore/mese/anno/intervallo, intervallo non valido, focus, aggiornamento dopo segna-fatto/modifica/eliminazione, consumo automatico che imposta `fatto`, conservazione istruttore alla cancellazione del pacchetto, CSV, mobile e console.
+- Suite esistenti aggiornate alle nuove etichette e ai dettagli espandibili, mantenendo i valori economici, i CSV e il report.
+
+## Problemi aperti / note
+
+- Il registro collaboratori usa esclusivamente `fatto === true`: le lezioni consumate automaticamente per scadenza ma non segnate come Fatto non generano giornate. La scelta è esplicita nell'interfaccia.
+- “Segna fatto” resta un'azione del preesistente Appuntamenti, senza azione inversa: un clic errato richiede la modifica manuale. Non è stato modificato in questa fase.
+- I pulsanti CSV sono nel dettaglio espandibile “Dettaglio pagamenti, incassi ed export”.
+- Filtri mese/cliente del Riepilogo e filtri della sezione Collaboratori sono indipendenti; l'etichetta del periodo chiarisce il diverso ambito.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 42 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 43 — Archivio clienti e archivio lezioni (completata e verificata localmente)
+
+## Analisi
+
+- La vista `archivio` contiene oggi solo l'elenco dei clienti archiviati, con ricerca, scheda consultabile, riattivazione ed eliminazione.
+- La vista `appuntamenti` mostra tutte le lezioni, comprese quelle passate, con filtro “Passati”.
+- Le lezioni svolte restano nel loro pacchetto e nello storico cliente; non esiste un elenco globale delle lezioni concluse.
+- `autoConsumeLezioni()` marca `fatto` alla scadenza; `fatto` non modifica il giorno della lezione.
+- Il sistema usa già `todayStr()` e un controllo periodico ogni 60 secondi.
+
+## Decisioni
+
+- La vista Archivio viene divisa in **Archivio clienti** e **Archivio lezioni**, senza cambiare il modello dati.
+- Una lezione è archiviata quando la sua data è precedente a quella odierna (`a.data < todayStr()`), quindi dopo la fine della giornata secondo l'orologio del sistema.
+- Le lezioni di oggi restano in Appuntamenti anche se segnate Fatto; passano in Archivio al cambio di data.
+- Le lezioni archiviate restano visibili nella scheda cliente e nei pacchetti come storico; spariscono solo dalla vista Appuntamenti.
+- L'Archivio lezioni è consultabile in sola lettura, raggruppato per giorno, con cliente, ora, istruttore, tipo, lezione e tag Fatto/Scaduta.
+- Il filtro “Passati” di Appuntamenti viene rimosso perché le lezioni passate non sono più lì.
+- Aggiornamento senza reload tramite controllo periodico: oltre al consumo, il timer rileva il cambio di `todayStr()` e ridisegna; un controllo su `visibilitychange` copre i ritorni da scheda in background.
+
+## Implementazione effettiva
+
+- **Archivio clienti**: mantenuti elenco, ricerca, scheda, riattivazione ed eliminazione; aggiunti titolo di sezione e conteggio filtrato.
+- **Archivio lezioni**: nuova sezione in sola lettura, raggruppata per giorno, con cliente, ora, istruttore, tipo, lezione e badge Fatto/Scaduta; ricerca per cliente, istruttore, tipo, data e lezione.
+- **Movimento automatico**: `lezioneArchiviata()` considera archiviata ogni lezione con `data < todayStr()`. Le lezioni di oggi restano in Appuntamenti; al cambio di data spariscono dall'agenda e compaiono in Archivio.
+- **Appuntamenti**: esclusione delle lezioni archiviate, introduzione esplicativa e rimozione del filtro “Passati” ormai inutile.
+- **Senza reload**: `tickCalendar()` controlla consumo e cambio di `todayStr()` ogni 60 secondi; `visibilitychange` esegue lo stesso controllo al ritorno sulla scheda. Salvataggio e refresh avvengono solo quando serve.
+- **Storico**: le lezioni archiviate restano nella scheda cliente e nei pacchetti; l'archivio globale non duplica dati e non introduce nuovi campi.
+- **Responsive**: sezioni, conteggi, ricerca e righe compatte verificate a 375 px senza overflow.
+
+## Test effettivi
+
+- Suite completa: **624 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **69/69**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**, Fase 42 **53/53**, Fase 43 **31/31**.
+- `test_fase43.py` copre: due sottotitoli, conteggi, contenuto e ordinamento archivio, tag Fatto, ricerca e stato vuoto, assenza di lezioni passate da Appuntamenti, permanenza nello storico cliente, movimento al cambio giornata senza reload con orologio Playwright, mobile e console.
+- Suite Fase 12 aggiornata per l'agenda di oggi/futuro e per la verifica della lezione passata in Archivio.
+
+## Problemi aperti / note
+
+- L'Archivio lezioni è in sola consultazione: per modificare una lezione archiviata si usa la scheda cliente.
+- L'archiviazione segue la data locale del sistema; il passaggio avviene al primo controllo dopo la mezzanotte (entro 60 secondi) o al ritorno sulla scheda.
+- Le lezioni archiviate restano nei pacchetti e nei conteggi del Resoconto/Collaboratori.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 43 completata e verificata localmente. Nessuna pubblicazione su GitHub.

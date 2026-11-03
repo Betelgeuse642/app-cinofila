@@ -746,6 +746,7 @@ const FILTER_RENDERERS = {
   "filtro-clienti": () => renderClienti(true),
   "filtro-clienti-stato": () => renderClienti(true),
   "filtro-archivio": () => renderArchivio(true),
+  "filtro-archivio-lezioni": renderArchivioLezioni,
   "filtro-appuntamenti": renderAppuntamenti,
   "filtro-appuntamenti-stato": renderAppuntamenti,
   "filtro-appuntamenti-periodo": renderAppuntamenti,
@@ -770,6 +771,20 @@ document.addEventListener("focusout", (e) => {
   const iso = parseDateInput(el.value);
   if (iso) el.value = isoToDateLabel(iso);
 });
+
+const datePickerHelper = document.getElementById("date-picker-helper");
+if (datePickerHelper) {
+  datePickerHelper.addEventListener("change", () => {
+    const target = datePickerHelper._target;
+    datePickerHelper._target = null;
+    if (!target || !isIsoDate(datePickerHelper.value)) return;
+    target.value = isoToDateLabel(datePickerHelper.value);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    const current = target.id ? document.getElementById(target.id) : target;
+    if (current) current.focus();
+  });
+}
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
@@ -1034,7 +1049,11 @@ function deletePacchettoCascade(plan) {
   data.incassi = data.incassi.filter(i => !pagamentoIds.has(i.pagamentoId));
   data.appuntamenti = data.appuntamenti.filter(a => !appuntamentoIds.has(a.id));
   for (const a of data.appuntamenti) {
-    if (a.pacchettoId === id) a.pacchettoId = 0;
+    if (a.pacchettoId === id) {
+      // Conserva l'attribuzione all'istruttore anche nello storico senza pacchetto.
+      if (!a.istruttore && plan.pacchetto.istruttore) a.istruttore = plan.pacchetto.istruttore;
+      a.pacchettoId = 0;
+    }
   }
 }
 
@@ -1082,6 +1101,33 @@ const CARD_FORMS = {
 };
 
 const DATE_INPUT_ATTRS = 'type="text" inputmode="numeric" placeholder="gg/mm/aaaa" maxlength="10" autocomplete="off" data-date-input';
+const CALENDAR_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg>';
+
+function dateFieldHtml(attrs) {
+  return `<span class="date-field"><input ${DATE_INPUT_ATTRS} ${attrs} /><button type="button" class="date-picker-btn" data-date-picker aria-label="Apri calendario">${CALENDAR_ICON}</button></span>`;
+}
+
+function openDatePicker(btn) {
+  const field = btn.closest(".date-field");
+  const target = field ? field.querySelector("input[data-date-input]") : null;
+  const picker = document.getElementById("date-picker-helper");
+  if (!target || !picker) return;
+  const iso = parseDateInput(target.value);
+  // Campo vuoto: nessuna data preselezionata, così anche "oggi" genera un cambio.
+  picker.value = iso || "";
+  picker._target = target;
+  const r = target.getBoundingClientRect();
+  picker.style.left = Math.max(0, r.left) + "px";
+  picker.style.top = Math.max(0, r.top) + "px";
+  picker.style.width = Math.max(1, r.width) + "px";
+  picker.style.height = Math.max(1, r.height) + "px";
+  if (typeof picker.showPicker === "function") {
+    try { picker.showPicker(); } catch (e) { picker.focus(); picker.click(); }
+  } else {
+    picker.focus();
+    picker.click();
+  }
+}
 
 function pacchettoLabel(tipo) {
   const t = (tipo || "").trim();
@@ -1114,7 +1160,7 @@ function pagamentoFormHtml(clienteId) {
         </label>
         <label>
           <span>Data contratto</span>
-          <input ${DATE_INPUT_ATTRS} name="data" required />
+          ${dateFieldHtml('name="data" required')}
         </label>
         <label>
           <span>Descrizione</span>
@@ -1127,7 +1173,7 @@ function pagamentoFormHtml(clienteId) {
           </label>
           <label>
             <span>Data incasso iniziale</span>
-            <input ${DATE_INPUT_ATTRS} name="dataIncasso" />
+            ${dateFieldHtml('name="dataIncasso"')}
           </label>
         </div>
         <div class="form-actions">
@@ -1148,7 +1194,7 @@ function appuntamentoFormHtml(clienteId) {
         <input type="hidden" name="pacchettoId" value="0" />
         <label>
           <span>Data</span>
-          <input ${DATE_INPUT_ATTRS} name="data" required />
+          ${dateFieldHtml('name="data" required')}
         </label>
         <label>
           <span>Ora</span>
@@ -1404,16 +1450,16 @@ function addScheduleRow(panel, values) {
   if (!box) return;
   const defaultInstructor = "";
   const row = document.createElement("div");
-  row.className = "dynamic-row";
+  row.className = "dynamic-row dynamic-row--schedule";
   row.dataset.scheduleRow = "";
   row.innerHTML = `
-    <label class="dynamic-row__field"><span>Data</span>
-      <input ${DATE_INPUT_ATTRS} data-field="data" />
+    <label class="dynamic-row__field dynamic-row__field--data"><span>Data</span>
+      ${dateFieldHtml('data-field="data"')}
     </label>
-    <label class="dynamic-row__field"><span>Ora</span>
+    <label class="dynamic-row__field dynamic-row__field--ora"><span>Ora</span>
       <input type="time" data-field="ora" />
     </label>
-    <label class="dynamic-row__field"><span>Istruttore</span>
+    <label class="dynamic-row__field dynamic-row__field--istruttore"><span>Istruttore</span>
       <input type="text" list="istruttori-suggeriti" data-field="istruttore" />
     </label>
     <span class="dynamic-row__status" data-row-status></span>`;
@@ -1512,7 +1558,7 @@ function renderPaymentBlock(block, pk) {
       <label><span>Importo incassato (€)</span>
         <input type="number" name="importo" min="0.01" step="0.01" max="${linked.incassoDaVerificare ? linked.importo : saldo}" required />
       </label>
-      <label><span>Data incasso</span><input ${DATE_INPUT_ATTRS} name="data" required /></label>
+      <label><span>Data incasso</span>${dateFieldHtml('name="data" required')}</label>
       <label><span>Nota (opzionale)</span><input type="text" name="nota" list="note-incasso-suggerite" autocomplete="off" /></label>
       <div class="form-actions">
         <button type="submit" class="btn-action btn-primary">Salva incasso</button>
@@ -1985,6 +2031,75 @@ function renderClienti(skipDetail) {
   renderOrfani();
 }
 
+/* Le lezioni passate sono archiviate dal giorno successivo alla loro data. */
+function lezioneArchiviata(a) {
+  return !!a && !!a.data && a.data < todayStr();
+}
+
+function lezioniArchiviate() {
+  return data.appuntamenti
+    .filter(lezioneArchiviata)
+    .sort((a, b) => (b.data + b.ora).localeCompare(a.data + a.ora) || b.id - a.id);
+}
+
+function renderArchivioLezioni() {
+  const ul = document.getElementById("archivio-lezioni-list");
+  if (!ul) return;
+  const query = filterValue("filtro-archivio-lezioni");
+  const all = lezioniArchiviate();
+  const rows = all.filter(a => {
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    return matchesText(query, clienteNome(a.clienteId), istruttoreAppuntamento(a), a.tipo,
+      isoToDateLabel(a.data), pk ? lezioneLabel(pk) : "");
+  });
+  ul.innerHTML = "";
+  let lastDate = null;
+  for (const a of rows) {
+    if (a.data !== lastDate) {
+      lastDate = a.data;
+      const head = document.createElement("li");
+      head.className = "agenda-day";
+      const parsed = new Date(a.data + "T00:00:00");
+      head.textContent = parsed && !isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })
+        : isoToDateLabel(a.data);
+      ul.appendChild(head);
+    }
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    const li = document.createElement("li");
+    li.className = "list-item is-archived archive-lesson";
+    li.dataset.id = a.id;
+    li.dataset.date = a.data;
+    li.innerHTML = `
+      <div class="list-item__head">
+        <span class="list-item__title"></span>
+        <span class="badge ${a.fatto ? "badge--ok" : "badge--neutral"}"></span>
+      </div>
+      <div class="list-item__meta"></div>
+      <div class="list-item__note"></div>`;
+    li.querySelector(".list-item__title").textContent =
+      clienteNome(a.clienteId) + " · " + (a.ora || "—");
+    li.querySelector(".badge").textContent = a.fatto ? "Fatto" : "Scaduta";
+    li.querySelector(".list-item__meta").textContent =
+      "Istruttore: " + (istruttoreAppuntamento(a) || "—") + " · Tipo: " + (a.tipo || "—");
+    li.querySelector(".list-item__note").textContent = pk ? lezioneLabel(pk) : "Senza lezione";
+    ul.appendChild(li);
+  }
+  if (!rows.length) {
+    const li = document.createElement("li");
+    li.className = "list-empty";
+    li.textContent = all.length
+      ? "Nessuna lezione archiviata corrisponde alla ricerca."
+      : "Nessuna lezione archiviata. Le lezioni svolte o scadute compaiono qui dopo la mezzanotte.";
+    ul.appendChild(li);
+  }
+  const count = document.getElementById("archivio-lezioni-count");
+  if (count) {
+    count.textContent = countLabel(rows.length, "lezione", "lezioni");
+    count.hidden = all.length === 0;
+  }
+}
+
 function renderArchivio(skipDetail) {
   const ul = document.getElementById("archivio-list");
   if (!ul) return;
@@ -2028,6 +2143,12 @@ function renderArchivio(skipDetail) {
     count.textContent = String(archiviati.length);
     count.hidden = archiviati.length === 0;
   }
+  const clientiCount = document.getElementById("archivio-clienti-count");
+  if (clientiCount) {
+    clientiCount.textContent = countLabel(sorted.length, "cliente", "clienti");
+    clientiCount.hidden = archiviati.length === 0;
+  }
+  renderArchivioLezioni();
 }
 
 function renderAppuntamenti() {
@@ -2041,11 +2162,11 @@ function renderAppuntamenti() {
   const end = addDaysIso(today, 6);
   const rows = data.appuntamenti.filter(a => {
     if (!a.clienteId || !clienteById(a.clienteId)) return false;
+    if (a.data && a.data < today) return false;
     if (stato === "fatti" && !a.fatto) return false;
     if (stato === "da-fare" && a.fatto) return false;
     if (periodo === "oggi" && a.data !== today) return false;
     if (periodo === "7" && (a.data < today || a.data > end)) return false;
-    if (periodo === "passati" && a.data >= today) return false;
     const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
     if (categoria === "pacchetto" && (!pk || pk.categoria === "singola")) return false;
     if (categoria === "singola" && (!pk || pk.categoria !== "singola")) return false;
@@ -2257,11 +2378,201 @@ function fillMonthSelect() {
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target.id === "resoconto-mese" || e.target.id === "resoconto-cliente") renderResoconto();
+  const id = e.target.id;
+  if (id === "resoconto-mese" || id === "resoconto-cliente") { renderResoconto(); return; }
+  if (id === "resoconto-collaboratore") { collabFilters.collaborator = e.target.value; renderResoconto(); return; }
+  if (id === "resoconto-coll-mese") { collabFilters.month = e.target.value; renderResoconto(); return; }
+  if (id === "resoconto-coll-anno") { collabFilters.year = e.target.value; renderResoconto(); return; }
+  if (id === "resoconto-coll-dal") { setCollabDateFilter("from", e.target.value); renderResoconto(); return; }
+  if (id === "resoconto-coll-al") { setCollabDateFilter("to", e.target.value); renderResoconto(); return; }
 });
+
+const RESOCONTO_MONTHS = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+
+/* Filtri della sezione Collaboratori. Sono solo stato di interfaccia. */
+const collabFilters = { collaborator: "", month: "", year: "", from: "", to: "" };
+
+function createEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function resocontoSectionHead(section, title, hint) {
+  section.appendChild(createEl("h3", "resoconto-section__title", title));
+  if (hint) section.appendChild(createEl("p", "resoconto-section__hint", hint));
+}
+
+function appendKpi(parent, label, value, meta, metaClass) {
+  const card = createEl("article", "resoconto-card");
+  card.appendChild(createEl("span", "resoconto-card__label", label));
+  card.appendChild(createEl("span", "resoconto-card__value", value));
+  if (meta) {
+    card.appendChild(createEl("span", "resoconto-card__meta" + (metaClass ? " " + metaClass : ""), meta));
+  }
+  parent.appendChild(card);
+}
+
+function appendChip(parent, text) {
+  parent.appendChild(createEl("span", "resoconto-chip", text));
+}
+
+function istruttoreAppuntamento(a) {
+  if (!a) return "";
+  const direct = (a.istruttore || "").trim();
+  if (direct) return direct;
+  const pk = a.pacchettoId ? data.pacchetti.find(p => p.id === a.pacchettoId) : null;
+  return pk && pk.istruttore ? pk.istruttore.trim() : "";
+}
+
+/* Registro derivato: nessun dato aggiuntivo viene salvato. */
+function collaboratorRegistry() {
+  const groups = new Map();
+  for (const a of data.appuntamenti) {
+    if (!a.fatto || !a.data) continue;
+    const name = istruttoreAppuntamento(a);
+    const key = name ? name.toLocaleLowerCase("it") : "__senza_istruttore__";
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, name: name || "Senza istruttore", days: new Map() };
+      groups.set(key, group);
+    }
+    const pk = a.pacchettoId ? data.pacchetti.find(p => p.id === a.pacchettoId) : null;
+    if (!group.days.has(a.data)) group.days.set(a.data, []);
+    group.days.get(a.data).push({
+      id: a.id,
+      ora: a.ora || "—",
+      clienteId: a.clienteId,
+      cliente: clienteNome(a.clienteId),
+      tipo: a.tipo || "—",
+      lezione: pk ? lezioneLabel(pk) : "Senza lezione",
+    });
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "it"));
+}
+
+function collabDateValue(raw) {
+  const iso = parseDateInput(raw);
+  return iso ? isoToDateLabel(iso) : raw;
+}
+
+function setCollabDateFilter(key, raw) {
+  const s = String(raw || "").trim();
+  if (!s) { collabFilters[key] = ""; return; }
+  const iso = parseDateInput(s);
+  collabFilters[key] = iso || s;
+}
+
+function readCollabPeriod() {
+  const fromRaw = String(collabFilters.from || "").trim();
+  const toRaw = String(collabFilters.to || "").trim();
+  const from = fromRaw ? parseDateInput(fromRaw) : "";
+  const to = toRaw ? parseDateInput(toRaw) : "";
+  const invalid = !!((fromRaw && !from) || (toRaw && !to) || (from && to && from > to));
+  return { fromRaw, toRaw, from, to, invalid };
+}
+
+function collabDateMatches(iso, period) {
+  if (period.from || period.to) {
+    if (period.from && iso < period.from) return false;
+    if (period.to && iso > period.to) return false;
+    return true;
+  }
+  if (collabFilters.year && iso.slice(0, 4) !== collabFilters.year) return false;
+  if (collabFilters.month && iso.slice(5, 7) !== collabFilters.month) return false;
+  return true;
+}
+
+function filteredCollaboratorRegistry(registry, period) {
+  if (period.invalid) return [];
+  return registry.map(group => {
+    const days = [...group.days.entries()]
+      .filter(([date]) => collabDateMatches(date, period))
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, lessons]) => ({
+        date,
+        lessons: [...lessons].sort((a, b) => (a.ora || "").localeCompare(b.ora || "") || a.id - b.id),
+      }));
+    return { ...group, days };
+  })
+    .filter(group => group.days.length)
+    .filter(group => !collabFilters.collaborator || group.key === collabFilters.collaborator);
+}
+
+function collaboratorPeriodLabel(period) {
+  if (period.invalid) return "Periodo collaboratori: intervallo non valido";
+  if (period.from || period.to) {
+    if (period.from && period.to) {
+      return "Periodo collaboratori: dal " + isoToDateLabel(period.from) + " al " + isoToDateLabel(period.to);
+    }
+    if (period.from) return "Periodo collaboratori: dal " + isoToDateLabel(period.from);
+    return "Periodo collaboratori: fino al " + isoToDateLabel(period.to);
+  }
+  const parts = [];
+  if (collabFilters.month) {
+    const idx = Number(collabFilters.month) - 1;
+    if (RESOCONTO_MONTHS[idx]) parts.push(RESOCONTO_MONTHS[idx]);
+  }
+  if (collabFilters.year) parts.push(collabFilters.year);
+  return "Periodo collaboratori: " + (parts.length ? parts.join(" ") : "tutto il periodo");
+}
+
+function appendSelectOption(select, value, text) {
+  const opt = document.createElement("option");
+  opt.value = value;
+  opt.textContent = text;
+  select.appendChild(opt);
+}
+
+function appendCollaboratorCard(parent, group) {
+  const card = createEl("details", "collaborator-card");
+  card.dataset.collaborator = group.key;
+  if (group.key === "__senza_istruttore__") card.classList.add("collaborator-card--warn");
+  const summary = createEl("summary", "collaborator-card__summary");
+  const main = createEl("span", "collaborator-card__main");
+  main.appendChild(createEl("strong", "collaborator-card__name", group.name));
+  const lessonsCount = group.days.reduce((sum, day) => sum + day.lessons.length, 0);
+  main.appendChild(createEl("span", "collaborator-card__meta",
+    countLabel(group.days.length, "giornata", "giornate") + " · " +
+    countLabel(lessonsCount, "lezione", "lezioni")));
+  summary.appendChild(main);
+  card.appendChild(summary);
+
+  const body = createEl("div", "collaborator-card__body");
+  for (const day of group.days) {
+    const dayDetails = createEl("details", "collab-day");
+    dayDetails.dataset.date = day.date;
+    const daySummary = createEl("summary", "collab-day__summary");
+    daySummary.appendChild(createEl("span", "collab-day__date", isoToDateLabel(day.date)));
+    daySummary.appendChild(createEl("span", "collab-day__count",
+      countLabel(day.lessons.length, "lezione", "lezioni")));
+    dayDetails.appendChild(daySummary);
+
+    const list = createEl("ul", "collab-day__list");
+    for (const lesson of day.lessons) {
+      const li = createEl("li", "collab-activity");
+      li.appendChild(createEl("span", "collab-activity__time", lesson.ora || "—"));
+      const parts = [lesson.cliente, lesson.lezione];
+      if (lesson.tipo && !lesson.lezione.toLocaleLowerCase("it").includes(lesson.tipo.toLocaleLowerCase("it"))) {
+        parts.push(lesson.tipo);
+      }
+      li.appendChild(createEl("span", "collab-activity__text", parts.join(" · ")));
+      list.appendChild(li);
+    }
+    dayDetails.appendChild(list);
+    body.appendChild(dayDetails);
+  }
+  card.appendChild(body);
+  parent.appendChild(card);
+}
 
 function renderResoconto() {
   const el = document.getElementById("resoconto");
+  if (!el) return;
+  const focusId = document.activeElement && document.activeElement.id;
+  const paymentsOpen = !!document.querySelector("#resoconto .resoconto-disclosure[open]");
   fillMonthSelect();
   fillReportClientSelect();
   const range = selectedMonth();
@@ -2278,38 +2589,37 @@ function renderResoconto() {
   const creditoTotale = crediti.reduce((s, x) => s + x.saldo, 0);
   const daVerificare = pagamentiDaVerificareAl(range.last, clienteFiltro);
   const daVerificareContratti = daVerificare.reduce((s, p) => s + p.importo, 0);
-  const nApp = data.appuntamenti.filter(a => a.data && inMonth(a.data)
-    && (!clienteFiltro || a.clienteId === clienteFiltro)).length;
-  const attivi = clienteFiltro
-    ? (clienteById(clienteFiltro).stato === "Attivo" ? 1 : 0)
-    : data.clienti.filter(c => c.stato === "Attivo").length;
+  const monthApps = data.appuntamenti.filter(a => a.data && inMonth(a.data)
+    && (!clienteFiltro || a.clienteId === clienteFiltro));
+  const svolte = monthApps.filter(a => a.fatto).length;
+  const daSvolgere = monthApps.length - svolte;
   const senzaData = incassiSenzaData(clienteFiltro);
+  const rimanentiTotali = data.pacchetti
+    .filter(pk => !clienteFiltro || pk.clienteId === clienteFiltro)
+    .reduce((s, pk) => s + lezioniRimanenti(pk), 0);
 
-  /* Trend incassi vs mese precedente: se il mese precedente è 0, mostra "—". */
   const selEl = document.getElementById("resoconto-mese");
   const selYm = selEl ? selEl.value : recentMonths(1)[0];
-  const prevYm = prevMonth(selYm);
-  const prevIncassato = incassatoMese(prevYm, clienteFiltro);
-  let trendLabel, trendCls;
+  const prevIncassato = incassatoMese(prevMonth(selYm), clienteFiltro);
+  let trendText, trendCls;
   if (prevIncassato === 0) {
-    trendLabel = "—";
+    trendText = "Trend vs mese precedente: —";
     trendCls = "";
   } else {
     const pct = ((incassato - prevIncassato) / prevIncassato) * 100;
     const abs = Math.abs(Math.round(pct));
     if (pct > 0) {
-      trendLabel = `+${abs} % (su)`;
+      trendText = "Trend vs mese precedente: +" + abs + "%";
       trendCls = "resoconto-trend--up";
     } else if (pct < 0) {
-      trendLabel = `−${abs} % (in calo)`;
+      trendText = "Trend vs mese precedente: −" + abs + "%";
       trendCls = "resoconto-trend--down";
     } else {
-      trendLabel = `0 % (invariato)`;
+      trendText = "Trend vs mese precedente: 0%";
       trendCls = "resoconto-trend--pari";
     }
   }
 
-  // Incidenza incassi per cliente: solo incassi effettivi nel periodo.
   const perCliente = new Map();
   for (const i of incassi) {
     const p = data.pagamenti.find(x => x.id === i.pagamentoId);
@@ -2324,97 +2634,196 @@ function renderResoconto() {
   });
 
   el.innerHTML = "";
-  const period = document.createElement("div");
-  period.className = "resoconto-period";
-  period.textContent = "Periodo: " + label + (clienteFiltro ? " · Cliente: " + clienteLabel : "");
-  el.appendChild(period);
+  el.appendChild(createEl("div", "resoconto-period",
+    "Periodo: " + label + (clienteFiltro ? " · Cliente: " + clienteLabel : "")));
 
-  const rows = [
-    { label: "Incassato effettivo nel mese", value: money(incassato) },
-    { label: "Crediti residui al fine mese", value: money(creditoTotale) },
-    { label: "Pagamenti con incasso da verificare", value: String(daVerificare.length) },
-    { label: "Appuntamenti nel mese", value: String(nApp) },
-    { label: "Clienti attivi", value: String(attivi) },
-  ];
-  for (const r of rows) {
-    const card = document.createElement("div");
-    card.className = "resoconto-card";
-    card.innerHTML = `<span class="resoconto-card__label"></span><span class="resoconto-card__value"></span>`;
-    card.querySelector(".resoconto-card__label").textContent = r.label;
-    card.querySelector(".resoconto-card__value").textContent = r.value;
-    el.appendChild(card);
+  /* 1. Riepilogo */
+  const overview = createEl("section", "resoconto-section");
+  resocontoSectionHead(overview, "Riepilogo", "Panoramica del periodo selezionato.");
+  const kpis = createEl("div", "resoconto-kpis");
+  appendKpi(kpis, "Incassato", money(incassato), trendText, trendCls);
+  appendKpi(kpis, "Crediti residui", money(creditoTotale), "al " + isoToDateLabel(range.last));
+  appendKpi(kpis, "Lezioni svolte", String(svolte),
+    monthApps.length
+      ? (daSvolgere ? countLabel(daSvolgere, "da svolgere", "da svolgere") : "Tutte svolte")
+      : "Nessuna lezione in programma");
+  overview.appendChild(kpis);
+  el.appendChild(overview);
+
+  /* 2. Lezioni e pagamenti */
+  const lessons = createEl("section", "resoconto-section");
+  resocontoSectionHead(lessons, "Lezioni", "Stato delle lezioni e situazione dei pagamenti.");
+  const chips = createEl("div", "resoconto-chips");
+  if (daSvolgere) appendChip(chips, countLabel(daSvolgere, "da svolgere", "da svolgere"));
+  if (rimanentiTotali) appendChip(chips, countLabel(rimanentiTotali, "rimanente", "rimanenti"));
+  if (chips.children.length) {
+    lessons.appendChild(chips);
+  } else if (!daVerificare.length && !senzaData.length) {
+    lessons.appendChild(createEl("p", "resoconto-empty",
+      svolte ? "Tutte le lezioni del periodo sono state svolte." : "Nessuna lezione nel periodo."));
   }
-
-  const trend = document.createElement("div");
-  trend.className = "resoconto-card resoconto-trend " + trendCls;
-  trend.innerHTML = `<span class="resoconto-card__label"></span><span class="resoconto-card__value"></span>`;
-  trend.querySelector(".resoconto-card__label").textContent = "Trend incassi vs mese precedente";
-  trend.querySelector(".resoconto-card__value").textContent = trendLabel;
-  el.appendChild(trend);
 
   if (daVerificare.length) {
-    const note = document.createElement("p");
-    note.className = "resoconto-note resoconto-note--warn";
-    note.textContent = daVerificare.length + " pagament" + (daVerificare.length === 1 ? "o" : "i")
-      + " legacy con incasso non registrato (contratti per " + money(daVerificareContratti)
-      + "): esclusi da incassi e crediti finché non verifichi l'importo ricevuto.";
-    el.appendChild(note);
+    lessons.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
+      countLabel(daVerificare.length, "pagamento legacy", "pagamenti legacy") +
+      " con incasso non registrato (contratti per " + money(daVerificareContratti) +
+      "): esclusi da incassi e crediti finché non verifichi l'importo ricevuto."));
   }
   if (senzaData.length) {
-    const note = document.createElement("p");
-    note.className = "resoconto-note resoconto-note--warn";
-    note.textContent = senzaData.length + " incass" + (senzaData.length === 1 ? "o" : "i")
-      + " senza data valida: esclus" + (senzaData.length === 1 ? "o" : "i")
-      + " dal totale mensile ma contat" + (senzaData.length === 1 ? "o" : "i")
-      + " nel saldo dei pagamenti.";
-    el.appendChild(note);
+    lessons.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
+      countLabel(senzaData.length, "incasso", "incassi") +
+      " senza data valida: esclusi dal totale mensile ma contati nel saldo dei pagamenti."));
   }
+
+  const detail = createEl("details", "resoconto-disclosure");
+  detail.open = paymentsOpen;
+  detail.appendChild(createEl("summary", "resoconto-disclosure__summary", "Dettaglio pagamenti, incassi ed export"));
+  const detailBody = createEl("div", "resoconto-disclosure__body");
+
+  detailBody.appendChild(createEl("p", "resoconto-section__hint",
+    "Le lezioni rimanenti rappresentano crediti da pacchetti inclusi nei crediti residui."));
 
   if (sortedCliente.length > 0) {
-    const wrap = document.createElement("div");
-    wrap.className = "resoconto-clienti";
-    const title = document.createElement("div");
-    title.className = "resoconto-clienti__title";
-    title.textContent = "Incidenza incassi per cliente";
-    wrap.appendChild(title);
-
-    const list = document.createElement("ul");
-    list.className = "resoconto-clienti__list";
+    const wrap = createEl("div", "resoconto-clienti");
+    wrap.appendChild(createEl("div", "resoconto-clienti__title", "Incassi per cliente"));
+    const list = createEl("ul", "resoconto-clienti__list");
     for (const [cid, tot] of sortedCliente) {
       const c = clienteById(cid);
-      const li = document.createElement("li");
-      li.className = "resoconto-cliente-row";
-      li.innerHTML = `<span class="resoconto-cliente-row__nome"></span><span class="resoconto-cliente-row__val"></span>`;
-      li.querySelector(".resoconto-cliente-row__nome").textContent = c ? c.nome : "Sconosciuto";
-      li.querySelector(".resoconto-cliente-row__val").textContent = money(tot);
+      const li = createEl("li", "resoconto-cliente-row");
+      li.appendChild(createEl("span", "resoconto-cliente-row__nome", c ? c.nome : "Sconosciuto"));
+      li.appendChild(createEl("span", "resoconto-cliente-row__val", money(tot)));
       list.appendChild(li);
     }
+    const total = createEl("li", "resoconto-cliente-row resoconto-cliente-row--totale");
+    total.appendChild(createEl("span", "resoconto-cliente-row__nome", "Totale"));
+    total.appendChild(createEl("span", "resoconto-cliente-row__val", money(incassato)));
+    list.appendChild(total);
     wrap.appendChild(list);
-
-    const t = document.createElement("li");
-    t.className = "resoconto-cliente-row resoconto-cliente-row--totale";
-    t.innerHTML = `<span class="resoconto-cliente-row__nome"></span><span class="resoconto-cliente-row__val"></span>`;
-    t.querySelector(".resoconto-cliente-row__nome").textContent = "Totale";
-    t.querySelector(".resoconto-cliente-row__val").textContent = money(incassato);
-    list.appendChild(t);
-    el.appendChild(wrap);
+    detailBody.appendChild(wrap);
   }
 
-  const rimanentiTotali = data.pacchetti
-    .filter(pk => !clienteFiltro || pk.clienteId === clienteFiltro)
-    .reduce((s, pk) => s + lezioniRimanenti(pk), 0);
-  const pkBlock = document.createElement("div");
-  pkBlock.className = "resoconto-pacchetti";
-  pkBlock.innerHTML = `
-    <span class="resoconto-pacchetti__label"></span>
-    <span class="resoconto-pacchetti__value"></span>
-    <span class="resoconto-pacchetti__note"></span>`;
-  pkBlock.querySelector(".resoconto-pacchetti__label").textContent = "Lezioni rimanenti totali";
-  pkBlock.querySelector(".resoconto-pacchetti__value").textContent = String(rimanentiTotali);
-  pkBlock.querySelector(".resoconto-pacchetti__note").textContent =
-    "Crediti da pacchetti inclusi nei crediti residui. Storico mensile consumi non disponibile.";
-  el.appendChild(pkBlock);
+  const csvActions = createEl("div", "resoconto-csv-actions");
+  const csvIncassi = createEl("button", "btn-action", "Esporta CSV incassi");
+  csvIncassi.type = "button";
+  csvIncassi.id = "btn-csv-incassi";
+  const csvPagamenti = createEl("button", "btn-action", "Esporta CSV pagamenti");
+  csvPagamenti.type = "button";
+  csvPagamenti.id = "btn-csv-pagamenti";
+  csvActions.appendChild(csvIncassi);
+  csvActions.appendChild(csvPagamenti);
+  detailBody.appendChild(csvActions);
 
+  detail.appendChild(detailBody);
+  lessons.appendChild(detail);
+  el.appendChild(lessons);
+
+  /* 3. Collaboratori */
+  const collab = createEl("section", "resoconto-section");
+  resocontoSectionHead(collab, "Collaboratori",
+    "Giornate ricavate dalle lezioni segnate come Fatto; le lezioni non svolte non contano.");
+  const registry = collaboratorRegistry();
+  const years = [...new Set(registry.flatMap(g => [...g.days.keys()].map(d => d.slice(0, 4))))]
+    .sort((a, b) => b.localeCompare(a));
+  if (collabFilters.collaborator && !registry.some(g => g.key === collabFilters.collaborator)) {
+    collabFilters.collaborator = "";
+  }
+  if (collabFilters.year && !years.includes(collabFilters.year)) collabFilters.year = "";
+  if (collabFilters.month && !RESOCONTO_MONTHS.some((_, i) => String(i + 1).padStart(2, "0") === collabFilters.month)) {
+    collabFilters.month = "";
+  }
+  const period = readCollabPeriod();
+  const filtered = filteredCollaboratorRegistry(registry, period);
+  const totalDays = filtered.reduce((sum, g) => sum + g.days.length, 0);
+  const totalLessons = filtered.reduce((sum, g) =>
+    sum + g.days.reduce((n, d) => n + d.lessons.length, 0), 0);
+
+  const filters = createEl("div", "collab-filters");
+  const collabSelect = createEl("select");
+  collabSelect.id = "resoconto-collaboratore";
+  collabSelect.setAttribute("aria-label", "Filtra per collaboratore");
+  appendSelectOption(collabSelect, "", "Tutti i collaboratori");
+  for (const group of registry) appendSelectOption(collabSelect, group.key, group.name);
+  collabSelect.value = collabFilters.collaborator;
+  const collabLabel = createEl("label", "resoconto-filter resoconto-filter--wide");
+  collabLabel.appendChild(createEl("span", null, "Collaboratore"));
+  collabLabel.appendChild(collabSelect);
+  filters.appendChild(collabLabel);
+
+  const monthSelect = createEl("select");
+  monthSelect.id = "resoconto-coll-mese";
+  monthSelect.setAttribute("aria-label", "Filtra per mese");
+  appendSelectOption(monthSelect, "", "Tutti i mesi");
+  RESOCONTO_MONTHS.forEach((name, i) => appendSelectOption(monthSelect, String(i + 1).padStart(2, "0"), name));
+  monthSelect.value = collabFilters.month;
+  const monthLabel = createEl("label", "resoconto-filter");
+  monthLabel.appendChild(createEl("span", null, "Mese"));
+  monthLabel.appendChild(monthSelect);
+  filters.appendChild(monthLabel);
+
+  const yearSelect = createEl("select");
+  yearSelect.id = "resoconto-coll-anno";
+  yearSelect.setAttribute("aria-label", "Filtra per anno");
+  appendSelectOption(yearSelect, "", "Tutti gli anni");
+  for (const year of years) appendSelectOption(yearSelect, year, year);
+  yearSelect.value = collabFilters.year;
+  const yearLabel = createEl("label", "resoconto-filter");
+  yearLabel.appendChild(createEl("span", null, "Anno"));
+  yearLabel.appendChild(yearSelect);
+  filters.appendChild(yearLabel);
+
+  const fromLabel = createEl("label", "resoconto-filter resoconto-filter--wide");
+  fromLabel.appendChild(createEl("span", null, "Dal"));
+  fromLabel.insertAdjacentHTML("beforeend", dateFieldHtml('id="resoconto-coll-dal" aria-label="Dal"'));
+  const fromInput = fromLabel.querySelector("input");
+  if (fromInput) fromInput.value = collabDateValue(collabFilters.from);
+  filters.appendChild(fromLabel);
+
+  const toLabel = createEl("label", "resoconto-filter resoconto-filter--wide");
+  toLabel.appendChild(createEl("span", null, "Al"));
+  toLabel.insertAdjacentHTML("beforeend", dateFieldHtml('id="resoconto-coll-al" aria-label="Al"'));
+  const toInput = toLabel.querySelector("input");
+  if (toInput) toInput.value = collabDateValue(collabFilters.to);
+  filters.appendChild(toLabel);
+
+  const reset = createEl("button", "btn-action collab-filters__reset", "Azzera filtri");
+  reset.type = "button";
+  reset.id = "resoconto-coll-reset";
+  filters.appendChild(reset);
+  collab.appendChild(filters);
+  collab.appendChild(createEl("p", "collab-filter-hint",
+    "Filtri indipendenti dal mese e dal cliente del riepilogo. Se compili Dal o Al, mese e anno vengono ignorati."));
+  collab.appendChild(createEl("p", "collab-period", collaboratorPeriodLabel(period)));
+  const summaryEl = createEl("p", "collab-summary",
+    countLabel(filtered.length, "collaboratore", "collaboratori") + " · " +
+    countLabel(totalDays, "giornata", "giornate") + " · " +
+    countLabel(totalLessons, "lezione", "lezioni"));
+  summaryEl.setAttribute("role", "status");
+  summaryEl.setAttribute("aria-live", "polite");
+  collab.appendChild(summaryEl);
+
+  if (period.invalid) {
+    const invalidEl = createEl("p", "resoconto-note resoconto-note--warn",
+      "Intervallo di date non valido: controlla i campi Dal e Al.");
+    invalidEl.setAttribute("role", "alert");
+    collab.appendChild(invalidEl);
+  } else if (!filtered.length) {
+    collab.appendChild(createEl("p", "resoconto-empty",
+      registry.length ? "Nessuna giornata corrisponde ai filtri." : "Nessuna lezione segnata come svolta."));
+  } else {
+    if (filtered.some(g => g.key === "__senza_istruttore__")) {
+      collab.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
+        "Alcune lezioni svolte non hanno un istruttore: sono raccolte nella voce \"Senza istruttore\"."));
+    }
+    const list = createEl("div", "collab-list");
+    for (const group of filtered) appendCollaboratorCard(list, group);
+    collab.appendChild(list);
+  }
+  el.appendChild(collab);
+
+  if (focusId) {
+    const next = document.getElementById(focusId);
+    if (next) next.focus();
+  }
   renderReport();
 }
 
@@ -2771,7 +3180,12 @@ function autoConsumeLezioni() {
     for (const a of data.appuntamenti) {
       if (a.pacchettoId !== pk.id || !a.data || !a.ora) continue;
       const when = new Date(a.data + "T" + a.ora + ":00");
-      if (!isNaN(when.getTime()) && when <= now) expired++;
+      if (isNaN(when.getTime()) || when > now) continue;
+      expired++;
+      if (!a.fatto) {
+        a.fatto = true;
+        changed = true;
+      }
     }
     const target = Math.min(pk.lezioni, Math.max(pk.utilizzate, expired));
     if (target !== pk.utilizzate) {
@@ -2938,6 +3352,8 @@ function handleClick(e) {
     if (f) { f.hidden = true; f.reset(); }
     return;
   }
+  const datePickerBtn = e.target.closest("[data-date-picker]");
+  if (datePickerBtn) { openDatePicker(datePickerBtn); return; }
   const deletePacchetto = e.target.closest("[data-delete-pacchetto]");
   if (deletePacchetto) {
     const panel = deletePacchetto.closest(".form-panel");
@@ -3239,6 +3655,15 @@ function handleClick(e) {
       if (!commit("Appuntamento eliminato.")) { restoreUndoState(); return; }
       offerUndo();
     }
+    return;
+  }
+  if (e.target.id === "resoconto-coll-reset") {
+    collabFilters.collaborator = "";
+    collabFilters.month = "";
+    collabFilters.year = "";
+    collabFilters.from = "";
+    collabFilters.to = "";
+    renderResoconto();
     return;
   }
   if (e.target.id === "btn-csv-incassi") { exportCsvIncassi(); return; }
@@ -3738,6 +4163,19 @@ refresh();
 })();
 initBanner();
 
-setInterval(() => {
-  if (autoConsumeLezioni() && saveData()) refresh();
-}, 60000);
+let lastCalendarDay = todayStr();
+
+function tickCalendar() {
+  const changed = autoConsumeLezioni();
+  const dayChanged = todayStr() !== lastCalendarDay;
+  if (changed && !saveData()) return;
+  if (changed || dayChanged) {
+    lastCalendarDay = todayStr();
+    refresh();
+  }
+}
+
+setInterval(tickCalendar, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) tickCalendar();
+});
