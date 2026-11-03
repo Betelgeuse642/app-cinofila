@@ -13,19 +13,21 @@ Il sito è pubblico e non ha autenticazione. I dati restano nel browser dell'ute
 ## Avvio in locale
 
 1. Apri `index.html` con un browser moderno (Chrome, Edge, Firefox, Safari).
-2. Al primo avvio l'app è vuota: inizia inserendo i tuoi clienti da **Clienti**.
-3. I dati restano nel browser su quel dispositivo, nella chiave `localStorage` `cinofilo-data-v1`.
+2. Al primo avvio l'app è vuota: inizia inserendo i tuoi clienti da **Scheda cliente**.
+3. Ogni scheda cliente contiene le sezioni Pagamenti, Appuntamenti e Pacchetti; i dati restano nel browser su quel dispositivo, nella chiave `localStorage` `cinofilo-data-v1`.
 
 `file://` e l'URL GitHub Pages sono origini diverse: hanno archivi `localStorage` separati. Per trasferire i dati usa **Esporta JSON** e **Importa JSON**.
 
 ## Funzioni principali
 
-- **Clienti**: anagrafica con dati del cane, stato (Attivo/Pausa), scheda con storico di pagamenti, appuntamenti e pacchetti.
-- **Archivio**: clienti archiviati con ricerca, scheda completa, modifica, riattivazione ed eliminazione.
-- **Pagamenti**: contratti, incassi anche parziali, stati derivati `Pagato`, `Parziale`, `Da pagare`, `Da verificare`; modifica, eliminazione con annullamento.
-- **Appuntamenti**: agenda raggruppata per giorno, stato fatto/da fare, filtri per periodo.
-- **Pacchetti**: lezioni totali/consumate/rimanenti, pagamento collegato, consumazione esplicita delle lezioni; eliminazione con i pagamenti e gli incassi collegati.
-- **Resoconto**: incassato effettivo del mese, crediti residui, incidenza per cliente, trend rispetto al mese precedente; filtro per cliente.
+- **Scheda cliente**: anagrafica con dati del cane e stato (Attivo/Pausa); due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni elemento ha un’intestazione compatta: titolo e tasti **Modifica/Elimina** e **Pagamento** sulla stessa riga, informazioni (lezioni utilizzate/rimaste, stato pagamento, data) sotto, poi elenco delle lezioni.
+- **Archivio**: due sezioni. **Archivio clienti** con ricerca, scheda completa, riattivazione ed eliminazione; **Archivio lezioni** con le lezioni svolte o scadute raggruppate per giorno, ricerca e dettagli (cliente, ora, istruttore, tipo, tag Fatto/Scaduta).
+- **Pagamenti** (dentro ogni pacchetto/lezione): totale, acconti multipli registrati liberamente (Acconto 1, Acconto 2, Saldo) senza scadenze pianificate, saldo e stato derivato `Pagato`, `Parziale`, `Da pagare`, `Da verificare`.
+- **Calendario** (dentro ogni pacchetto/lezione): date scelte singolarmente, ora e istruttore per lezione; aggiunta, modifica, eliminazione e stato fatto/da fare. L’istruttore può essere diverso per ogni lezione. Nei pacchetti le date sono in un elenco compatto con piccoli tasti Modifica/Elimina.
+- **Appuntamenti** (vista home): agenda delle lezioni di oggi e future, raggruppata per giorno, con ricerca e filtri per periodo, stato e categoria; modifica di data, ora, istruttore e stato. Le lezioni passate escono automaticamente dall’agenda a fine giornata e passano in Archivio lezioni.
+- **Pacchetti e lezioni**: inserimento guidato con tipo, lezioni, prezzo, acconti e saldo; data automatica; date individuali con istruttore per lezione; pagamento collegato; lezioni totali/consumate/rimanenti; eliminazione con pagamenti, incassi e appuntamenti non svolti collegati.
+- **Resoconto**: tre sezioni distinte. **Riepilogo** con incassato, crediti residui, lezioni svolte e trend compatto; **Lezioni** con conteggi sintetici, avvisi e dettaglio espandibile di incassi, crediti e CSV; **Collaboratori** con registro automatico delle giornate, filtri e dettagli delle attività.
+- **Collaboratori**: giornate ricavate dalle lezioni segnate come Fatto, una per data distinta, con nome, giornate totali, lezioni, date e dettaglio attività; filtri per collaboratore, mese, anno e intervallo di date. Il consumo automatico delle lezioni scadute imposta Fatto e aggiorna il registro. Nessun dato aggiuntivo viene salvato.
 - **Report stampabile/PDF**: dal Resoconto, con separazione tra incassi effettivi e importi contrattuali.
 - **CSV**: esportazione di incassi e pagamenti del mese, anche filtrati per cliente.
 - **Backup**: esportazione/importazione JSON, snapshot automatico e ripristino in caso di dati illeggibili.
@@ -54,9 +56,12 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase12.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase13.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase14.py
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase42.py
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase43.py
 ```
 
-Ultima verifica: **506 test superati, 0 fallimenti** (27/10/2026).
+Ultima verifica: **624 test superati, 0 fallimenti** (03/11/2026).
 
 ## Repository e pubblicazione
 
@@ -150,20 +155,32 @@ Se il problema riguarda il modello dati, ripristina anche il backup JSON esporta
 
 ### Versione stabile
 
-Il commit stabile attuale è `68cdc1e`. La procedura concordata per identificarlo con un tag annotato, da eseguire solo dopo approvazione, è:
+Il tag annotato `v1.0.0` è già stato creato sul commit `68cdc1e` e pubblicato. Per una nuova versione stabile, crea un tag annotato con il nuovo numero di versione solo dopo approvazione:
 
 ```bash
-git tag -a v1.0.0 68cdc1e -m "Prima versione stabile"
-git push origin v1.0.0
+git tag -a v1.1.0 <sha-del-commit> -m "Versione stabile v1.1.0"
+git push origin v1.1.0
 ```
 
 ## Limiti noti
 
 - I dati sono locali: cancellare i dati del browser o cambiare dispositivo/browser li perde. Usa il backup JSON.
-- Il Resoconto e i CSV usano un periodo mensile; non è disponibile un intervallo di date personalizzato.
+- Riepilogo e Lezioni usano un periodo mensile; i CSV usano il mese selezionato. La sezione Collaboratori ha filtri propri per mese, anno e intervallo di date.
 - Il CSV pagamenti include i contratti del mese selezionato; i crediti di contratti precedenti restano nel resoconto/report.
 - Lo storico mensile dei consumi dei pacchetti non è disponibile.
+- La modifica di un pacchetto o di una lezione singola non rigenera il calendario: le date già create restano invariate e si modificano dal calendario.
+- L'inserimento di una lezione si blocca se data e ora sono già occupate; non c'è uno spostamento automatico.
+- Il consumo delle lezioni è automatico alla scadenza: una lezione non modificata o eliminata prima della data incrementa le utilizzate e viene segnata come Fatto, così entra anche nel registro Collaboratori. Non c’è più il tasto manuale “Consuma lezione”.
+- Il tipo di pacchetto è facoltativo: se vuoto viene mostrato come “Pacchetto”.
+- La data di vendita è automatica (oggi) e non viene chiesta nel form; l’istruttore si inserisce solo nelle singole date delle lezioni.
+- Tutte le date si inseriscono e si mostrano come `gg/mm/aaaa`; accanto a ogni campo c’è un pulsante calendario che apre il selettore nativo del browser, mentre la digitazione manuale resta disponibile con normalizzazione al blur.
+- Gli acconti iniziali hanno solo l’importo: data odierna e nota “Acconto N” sono automatiche.
+- Alla prima apertura, i vecchi appuntamenti e pagamenti senza pacchetto vengono convertiti in lezioni singole; anche i collegamenti a pacchetti inesistenti vengono scollegati. I dati orfani restano nel pannello dedicato.
+- Non esistono rate pianificate con scadenza, registro istruttori o sincronizzazione con calendari esterni.
 - I dialoghi di conferma sono quelli nativi del browser.
+- L'Archivio clienti e lezioni è in sola consultazione: per modificare un cliente archiviato occorre riattivarlo; per modificare una lezione archiviata si usa la scheda cliente.
+- Il passaggio delle lezioni in Archivio segue la data locale del sistema e avviene al primo controllo dopo la mezzanotte (entro 60 secondi) o al ritorno sulla scheda.
+- I form della scheda lavorano sul cliente aperto: per spostare un record su un altro cliente occorre eliminarlo e ricrearlo.
 
 ## File
 

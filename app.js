@@ -136,13 +136,17 @@ function normalizeAppuntamento(a) {
     data,
     ora,
     tipo: str(a.tipo, 60) || "Addestramento",
+    istruttore: str(a.istruttore, 60),
+    pacchettoId: typeof a.pacchettoId === "number" && Number.isInteger(a.pacchettoId) && a.pacchettoId > 0 ? a.pacchettoId : 0,
     fatto: a.fatto === true,
   };
 }
 
 function normalizePacchetto(p) {
   if (!p || !validId(p.id)) { warn("pacchetti: riga senza id valido ignorata"); return null; }
+  const categoria = p.categoria === "singola" ? "singola" : "pacchetto";
   let lezioni = Number.isInteger(p.lezioni) && p.lezioni >= 0 ? p.lezioni : 0;
+  if (categoria === "singola") lezioni = 1;
   if (lezioni === 0) warn("pacchetti: numero lezioni non valido per id " + p.id);
   const utilizzate = Number.isInteger(p.utilizzate) && p.utilizzate >= 0 ? Math.min(p.utilizzate, lezioni) : 0;
   let prezzo = p.prezzo;
@@ -159,6 +163,9 @@ function normalizePacchetto(p) {
   return {
     id: p.id,
     clienteId: typeof p.clienteId === "number" ? p.clienteId : 0,
+    categoria,
+    tipo: str(p.tipo, 60),
+    istruttore: str(p.istruttore, 60),
     lezioni,
     utilizzate,
     prezzo,
@@ -230,6 +237,42 @@ function normalizeData(raw) {
   let pkOrfani = 0;
   for (const p of pagamenti) if (p.pacchettoId && !pacchettiIds.has(p.pacchettoId)) { p.pacchettoId = 0; pkOrfani++; }
   if (pkOrfani) warn(pkOrfani + " pagamenti collegati a pacchetti inesistenti sono stati scollegati");
+  let appPkOrfani = 0;
+  for (const a of appuntamenti) if (a.pacchettoId && !pacchettiIds.has(a.pacchettoId)) { a.pacchettoId = 0; appPkOrfani++; }
+  if (appPkOrfani) warn(appPkOrfani + " appuntamenti collegati a pacchetti inesistenti sono stati convertiti in lezioni singole");
+
+  // Migrazione alla scheda a due sezioni: appuntamenti e pagamenti senza
+  // pacchetto diventano lezioni singole, senza inventare importi o date.
+  let migrateSingole = 0;
+  for (const a of appuntamenti) {
+    if (a.clienteId && !a.pacchettoId) {
+      const pk = {
+        id: nextId(pacchetti), clienteId: a.clienteId, categoria: "singola",
+        tipo: a.tipo, istruttore: a.istruttore, lezioni: 1,
+        utilizzate: a.fatto ? 1 : 0, prezzo: 0, data: a.data,
+      };
+      pacchetti.push(pk);
+      a.pacchettoId = pk.id;
+      migrateSingole++;
+    }
+  }
+  for (const p of pagamenti) {
+    if (p.clienteId && !p.pacchettoId) {
+      const pk = {
+        id: nextId(pacchetti), clienteId: p.clienteId, categoria: "singola",
+        tipo: (p.descrizione || "Lezione singola").slice(0, 60), istruttore: "",
+        lezioni: 1, utilizzate: 0, prezzo: p.importo, data: p.data,
+      };
+      pacchetti.push(pk);
+      p.pacchettoId = pk.id;
+      migrateSingole++;
+    }
+  }
+  if (migrateSingole) {
+    warn(migrateSingole + " dati senza pacchetto sono stati convertiti in lezioni singole");
+  }
+  pacchettiIds.clear();
+  for (const pk of pacchetti) pacchettiIds.add(pk.id);
 
   // Registro incassi. Se la chiave è assente, il dataset è precedente alla Fase 9:
   // i pagamenti "Pagato" non hanno un importo/acconto registrato, quindi viene
@@ -503,7 +546,7 @@ function initBanner() {
     hasStoredData = localStorage.getItem(STORAGE_KEY) !== null;
   } catch (e) { /* già gestito sopra */ }
   if (!hasStoredData && isDataEmpty(data)) {
-    showBanner("Nessun dato registrato. Aggiungi il primo cliente dalla sezione Clienti.", [
+    showBanner("Nessun dato registrato. Aggiungi il primo cliente dalla sezione Scheda cliente.", [
       { label: "Vai ai clienti", onClick: () => { hideBanner(); goTo("clienti"); } },
       { label: "Chiudi", onClick: hideBanner },
     ]);
@@ -549,9 +592,12 @@ window.addEventListener("storage", (e) => {
 });
 
 let data = loadData();
+// Consumo automatico delle lezioni già scadute (solo aumento, mai decremento).
+const consumedOnLoad = autoConsumeLezioni();
 // Esposto per test: consente ai test Playwright di re-idratre i dati da
 // localStorage (data.__testSet = <oggetto>) e re-renderizzare senza ricarica.
 window.__appData = data;
+if (consumedOnLoad && !storageBlocked && !storageCorrupt) saveData();
 
 /* ===== Helper ===== */
 function clienteById(id) {
@@ -633,6 +679,7 @@ function setStatus(msg, isError) {
 /* Salva e ridisegna; restituisce false se il salvataggio è fallito.
    I chiamanti non devono mostrare un messaggio di successo in caso di errore. */
 function commit(msg) {
+  autoConsumeLezioni();
   if (!saveData()) return false;
   refresh();
   if (msg) setStatus(msg);
@@ -672,11 +719,9 @@ function undoLast() {
 const views = document.querySelectorAll(".view");
 const VIEW_TITLES = {
   home: "Addestramento Cinofilo",
-  clienti: "Clienti · Addestramento Cinofilo",
-  archivio: "Archivio · Addestramento Cinofilo",
-  pagamenti: "Pagamenti · Addestramento Cinofilo",
+  clienti: "Scheda cliente · Addestramento Cinofilo",
   appuntamenti: "Appuntamenti · Addestramento Cinofilo",
-  pacchetti: "Pacchetti · Addestramento Cinofilo",
+  archivio: "Archivio · Addestramento Cinofilo",
   resoconto: "Resoconto · Addestramento Cinofilo",
 };
 function showView(id) {
@@ -696,36 +741,73 @@ document.addEventListener("click", (e) => {
 });
 
 const FILTER_RENDERERS = {
-  "filtro-clienti": renderClienti,
-  "filtro-clienti-stato": renderClienti,
-  "filtro-archivio": renderArchivio,
-  "filtro-pagamenti": renderPagamenti,
-  "filtro-pagamenti-stato": renderPagamenti,
+  // I filtri aggiornano solo la lista: non ridisegnano la scheda aperta,
+  // così i form in compilazione non perdono i valori.
+  "filtro-clienti": () => renderClienti(true),
+  "filtro-clienti-stato": () => renderClienti(true),
+  "filtro-archivio": () => renderArchivio(true),
+  "filtro-archivio-lezioni": renderArchivioLezioni,
   "filtro-appuntamenti": renderAppuntamenti,
   "filtro-appuntamenti-stato": renderAppuntamenti,
   "filtro-appuntamenti-periodo": renderAppuntamenti,
-  "filtro-pacchetti": renderPacchetti,
-  "filtro-pacchetti-stato": renderPacchetti,
+  "filtro-appuntamenti-categoria": renderAppuntamenti,
 };
 function onFilterChange(e) {
   const fn = FILTER_RENDERERS[e.target.id];
   if (fn) fn();
+  const panel = e.target.closest("#form-cliente-pacchetto");
+  if (panel) {
+    if (e.target.name === "lezioni") syncScheduleRows(panel);
+    else refreshPacchettoForm(panel);
+  }
 }
 document.addEventListener("input", onFilterChange);
 document.addEventListener("change", onFilterChange);
 
+// Normalizza le date digitate in gg/mm/aaaa quando il campo perde il focus.
+document.addEventListener("focusout", (e) => {
+  const el = e.target;
+  if (!el || !el.matches || !el.matches("input[data-date-input]")) return;
+  const iso = parseDateInput(el.value);
+  if (iso) el.value = isoToDateLabel(iso);
+});
+
+const datePickerHelper = document.getElementById("date-picker-helper");
+if (datePickerHelper) {
+  datePickerHelper.addEventListener("change", () => {
+    const target = datePickerHelper._target;
+    datePickerHelper._target = null;
+    if (!target || !isIsoDate(datePickerHelper.value)) return;
+    target.value = isoToDateLabel(datePickerHelper.value);
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+    const current = target.id ? document.getElementById(target.id) : target;
+    if (current) current.focus();
+  });
+}
+
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  const receipt = document.querySelector(".receipt-form:not([hidden])");
+  const active = document.activeElement;
+  const receipts = [...document.querySelectorAll(".receipt-form:not([hidden])")]
+    .filter(f => f.getClientRects().length);
+  const openForms = [...document.querySelectorAll(".form-panel")]
+    .filter(p => !p.hidden && p.getClientRects().length);
+  const focusedReceipt = receipts.find(f => f.contains(active));
+  const focusedForm = openForms.find(p => p.contains(active));
+  // Chiude prima il form che contiene il focus; altrimenti il primo visibile.
+  const receipt = focusedReceipt || (!focusedForm && receipts[0]);
   if (receipt) {
-    const li = receipt.closest("li");
+    const holder = receipt.closest("[data-id]");
     receipt.hidden = true;
     receipt.reset();
-    const trigger = li ? li.querySelector("[data-action='registra-incasso']") : null;
+    const trigger = holder ? holder.querySelector("[data-action='registra-incasso']") : null;
     if (trigger) trigger.focus();
     return;
   }
-  const openForm = [...document.querySelectorAll(".form-panel")].find(p => !p.hidden);
+  const openForm = focusedForm
+    || openForms.find(p => p.id === lastOpenedFormId)
+    || openForms[0];
   if (openForm) { toggleForm(openForm.id, false); return; }
   const detail = document.querySelector(".detail-panel:not([hidden])");
   if (detail) {
@@ -750,10 +832,17 @@ function hashView() {
   return (location.hash || "#home").slice(1);
 }
 
-/* Viste ammissibili; tutte le transizioni attraversano goTo(). */
-const KNOWN_VIEWS = ["home", "clienti", "archivio", "pagamenti", "appuntamenti", "pacchetti", "resoconto"];
+/* Viste ammissibili; tutte le transizioni attraversano goTo().
+   Le vecchie viste autonome convivono solo come alias della scheda cliente. */
+const KNOWN_VIEWS = ["home", "clienti", "appuntamenti", "archivio", "resoconto"];
+const LEGACY_VIEWS = { pagamenti: "clienti", pacchetti: "clienti" };
 
 function goTo(view) {
+  // Le vecchie sezioni ora vivono dentro la scheda cliente.
+  const requested = view;
+  const isLegacy = !!LEGACY_VIEWS[requested];
+  const isUnknown = !isLegacy && !KNOWN_VIEWS.includes(requested);
+  if (isLegacy) view = LEGACY_VIEWS[requested];
   // Convalida il nome della vista: se sconosciuta, torna alla vista iniziale.
   if (!KNOWN_VIEWS.includes(view)) view = "home";
   showView(view);
@@ -761,6 +850,10 @@ function goTo(view) {
   if (location.hash === target) {
     // URL già corretto: allinea solo lo stato, senza nuove entrature di back/forward.
     if (!history.state || history.state.view !== view) history.replaceState({ view }, "", target);
+  } else if (isLegacy || isUnknown) {
+    // Alias o hash non valido: sostituisce la voce di cronologia invece di aggiungerla,
+    // così il tasto Indietro non resta bloccato sul vecchio hash.
+    history.replaceState({ view }, "", target);
   } else {
     history.pushState({ view }, "", target);
   }
@@ -772,9 +865,36 @@ function money(n) {
 }
 
 function isoToDateLabel(iso) {
-  const parts = iso.split("-");
-  if (parts.length !== 3) return iso;
+  const parts = String(iso || "").split("-");
+  if (parts.length !== 3) return String(iso || "");
   return parts[2] + "/" + parts[1] + "/" + parts[0];
+}
+
+function todayInput() {
+  return isoToDateLabel(todayStr());
+}
+
+function parseDateInput(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  if (isIsoDate(s)) return s;
+  const m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (!m) return "";
+  let year = Number(m[3]);
+  if (year < 100) year += 2000;
+  const month = Number(m[2]);
+  const day = Number(m[1]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  const d = new Date(year, month - 1, day);
+  if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return "";
+  return String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+}
+
+function addDaysIso(iso, days) {
+  const d = new Date(iso + "T00:00:00");
+  if (isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + days);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
 function filterValue(id) {
@@ -786,13 +906,6 @@ function matchesText(query, ...fields) {
   const q = (query || "").trim().toLowerCase();
   if (!q) return true;
   return fields.some(f => String(f == null ? "" : f).toLowerCase().includes(q));
-}
-
-function addDaysIso(iso, days) {
-  const d = new Date(iso + "T00:00:00");
-  if (isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() + days);
-  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
 /* ===== Render clienti e archivio ===== */
@@ -863,12 +976,19 @@ function pacchettoDeletionPlan(id) {
   const pagamenti = data.pagamenti.filter(p => p.pacchettoId === id);
   const pagamentoIds = new Set(pagamenti.map(p => p.id));
   const incassi = data.incassi.filter(i => pagamentoIds.has(i.pagamentoId));
+  const appuntamenti = data.appuntamenti.filter(a => a.pacchettoId === id);
+  const appuntamentiDaEliminare = appuntamenti.filter(a => !a.fatto);
+  const appuntamentiSvolti = appuntamenti.filter(a => a.fatto);
   const warnings = [];
   if (!pagamenti.length) {
     warnings.push("Nessun pagamento collegato a questo pacchetto.");
   }
   if (pagamenti.length > 1) {
     warnings.push("Sono presenti " + pagamenti.length + " pagamenti collegati allo stesso pacchetto: verranno eliminati tutti.");
+  }
+  if (appuntamentiSvolti.length) {
+    warnings.push(countLabel(appuntamentiSvolti.length, "appuntamento svolto resterà", "appuntamenti svolti resteranno")
+      + " nello storico senza collegamento al pacchetto.");
   }
   const saldo = pagamenti.reduce((s, p) => s + (p.incassoDaVerificare ? 0 : saldoPagamento(p)), 0);
   if (saldo > 0.005) {
@@ -879,7 +999,11 @@ function pacchettoDeletionPlan(id) {
     warnings.push(countLabel(daVerificare.length, "pagamento ha", "pagamenti hanno") + " un incasso legacy da verificare.");
   }
   const incassato = incassi.reduce((s, i) => s + i.importo, 0);
-  return { pacchetto: pk, pagamenti, incassi, warnings, saldo, incassato };
+  return {
+    pacchetto: pk, pagamenti, incassi, appuntamenti,
+    appuntamentiDaEliminare, appuntamentiSvolti,
+    warnings, saldo, incassato,
+  };
 }
 
 function deletionLines(items) {
@@ -919,9 +1043,41 @@ function deleteClienteCascade(plan) {
 function deletePacchettoCascade(plan) {
   const id = plan.pacchetto.id;
   const pagamentoIds = new Set(plan.pagamenti.map(p => p.id));
+  const appuntamentoIds = new Set(plan.appuntamentiDaEliminare.map(a => a.id));
   data.pacchetti = data.pacchetti.filter(pk => pk.id !== id);
   data.pagamenti = data.pagamenti.filter(p => !pagamentoIds.has(p.id));
   data.incassi = data.incassi.filter(i => !pagamentoIds.has(i.pagamentoId));
+  data.appuntamenti = data.appuntamenti.filter(a => !appuntamentoIds.has(a.id));
+  for (const a of data.appuntamenti) {
+    if (a.pacchettoId === id) {
+      // Conserva l'attribuzione all'istruttore anche nello storico senza pacchetto.
+      if (!a.istruttore && plan.pacchetto.istruttore) a.istruttore = plan.pacchetto.istruttore;
+      a.pacchettoId = 0;
+    }
+  }
+}
+
+function deletePacchettoById(id) {
+  const plan = pacchettoDeletionPlan(id);
+  if (!plan) return;
+  const pk = plan.pacchetto;
+  const label = lezioneLabel(pk);
+  const contratti = plan.pagamenti.reduce((s, p) => s + p.importo, 0);
+  const items = [
+    { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati", extra: plan.pagamenti.length ? money(contratti) : "" },
+    { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
+    { n: plan.appuntamentiDaEliminare.length, singular: "appuntamento non svolto", plural: "appuntamenti non svolti" },
+  ];
+  const msg = confirmDeletionMessage(
+    "Eliminare " + label + " di " + clienteNome(pk.clienteId) +
+      (pk.categoria === "pacchetto" ? " (" + pk.lezioni + " lezioni)?" : "?"),
+    items, plan.warnings, ""
+  );
+  if (!confirm(msg)) return;
+  rememberUndo(label + " eliminato.");
+  deletePacchettoCascade(plan);
+  if (!commit(label + " eliminato con i dati collegati.")) { restoreUndoState(); return; }
+  offerUndo();
 }
 
 function detailRow(box, title, note) {
@@ -935,18 +1091,758 @@ function detailRow(box, title, note) {
   box.appendChild(row);
 }
 
+/* ===== Scheda cliente gestibile (Fasi 18-23) =====
+   Pagamenti, appuntamenti e pacchetti vivono dentro la scheda del cliente.
+   I form hanno il cliente già impostato e non lo richiedono più. */
+const CARD_FORMS = {
+  pagamento: "form-cliente-pagamento",
+  appuntamento: "form-cliente-appuntamento",
+  pacchetto: "form-cliente-pacchetto",
+};
+
+const DATE_INPUT_ATTRS = 'type="text" inputmode="numeric" placeholder="gg/mm/aaaa" maxlength="10" autocomplete="off" data-date-input';
+const CALENDAR_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg>';
+
+function dateFieldHtml(attrs) {
+  return `<span class="date-field"><input ${DATE_INPUT_ATTRS} ${attrs} /><button type="button" class="date-picker-btn" data-date-picker aria-label="Apri calendario">${CALENDAR_ICON}</button></span>`;
+}
+
+function openDatePicker(btn) {
+  const field = btn.closest(".date-field");
+  const target = field ? field.querySelector("input[data-date-input]") : null;
+  const picker = document.getElementById("date-picker-helper");
+  if (!target || !picker) return;
+  const iso = parseDateInput(target.value);
+  // Campo vuoto: nessuna data preselezionata, così anche "oggi" genera un cambio.
+  picker.value = iso || "";
+  picker._target = target;
+  const r = target.getBoundingClientRect();
+  picker.style.left = Math.max(0, r.left) + "px";
+  picker.style.top = Math.max(0, r.top) + "px";
+  picker.style.width = Math.max(1, r.width) + "px";
+  picker.style.height = Math.max(1, r.height) + "px";
+  if (typeof picker.showPicker === "function") {
+    try { picker.showPicker(); } catch (e) { picker.focus(); picker.click(); }
+  } else {
+    picker.focus();
+    picker.click();
+  }
+}
+
+function pacchettoLabel(tipo) {
+  const t = (tipo || "").trim();
+  return !t || t.toLowerCase() === "pacchetto" ? "Pacchetto" : "Pacchetto " + t;
+}
+
+function pacchettoDescrizione(tipo, lezioni) {
+  const t = (tipo || "").trim();
+  return (!t || t.toLowerCase() === "pacchetto" ? "Pacchetto " : "Pacchetto " + t + " · ") + lezioni + " lezioni";
+}
+
+function cardSectionHead(titleId, title, buttonId, buttonLabel, panelId) {
+  return `
+    <div class="card-section__head">
+      <h4 id="${titleId}">${title}</h4>
+      <button type="button" class="btn-action" id="${buttonId}" aria-controls="${panelId}" aria-expanded="false">${buttonLabel}</button>
+    </div>`;
+}
+
+function pagamentoFormHtml(clienteId) {
+  return `
+    <div id="${CARD_FORMS.pagamento}" class="form-panel" hidden>
+      <h5 data-form-title>Nuovo pagamento</h5>
+      <form data-form="pagamento" data-new-btn="cliente-btn-nuovo-pagamento">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" value="${clienteId}" />
+        <label>
+          <span>Importo contratto (€)</span>
+          <input type="number" name="importo" min="0.01" step="0.01" required />
+        </label>
+        <label>
+          <span>Data contratto</span>
+          ${dateFieldHtml('name="data" required')}
+        </label>
+        <label>
+          <span>Descrizione</span>
+          <input type="text" name="descrizione" autocomplete="off" />
+        </label>
+        <div data-receipt-fields>
+          <label>
+            <span>Incasso iniziale (€, opzionale)</span>
+            <input type="number" name="acconto" min="0" step="0.01" value="0" />
+          </label>
+          <label>
+            <span>Data incasso iniziale</span>
+            ${dateFieldHtml('name="dataIncasso"')}
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pagamento}">Annulla</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function appuntamentoFormHtml(clienteId) {
+  return `
+    <div id="${CARD_FORMS.appuntamento}" class="form-panel" hidden>
+      <h5 data-form-title>Nuova lezione</h5>
+      <form data-form="appuntamento" data-new-btn="cliente-btn-nuovo-pacchetto">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" value="${clienteId}" />
+        <input type="hidden" name="pacchettoId" value="0" />
+        <label>
+          <span>Data</span>
+          ${dateFieldHtml('name="data" required')}
+        </label>
+        <label>
+          <span>Ora</span>
+          <input type="time" name="ora" required />
+        </label>
+        <label>
+          <span>Tipo di lezione</span>
+          <select name="tipo" required>
+            <option value="Addestramento">Addestramento</option>
+            <option value="Esame">Esame</option>
+            <option value="Valutazione">Valutazione</option>
+            <option value="Ritiro">Ritiro</option>
+          </select>
+        </label>
+        <label>
+          <span>Istruttore</span>
+          <input type="text" name="istruttore" list="istruttori-suggeriti" maxlength="60" autocomplete="off" />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva</button>
+          <button type="button" class="btn-action" data-cancel="${CARD_FORMS.appuntamento}">Annulla</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function pacchettoFormHtml(clienteId) {
+  return `
+    <div id="${CARD_FORMS.pacchetto}" class="form-panel" hidden>
+      <h5 data-form-title>Pacchetto</h5>
+      <form data-form="pacchetto" data-new-btn="cliente-btn-nuovo-pacchetto">
+        <input type="hidden" name="id" />
+        <input type="hidden" name="clienteId" value="${clienteId}" />
+        <input type="hidden" name="categoria" value="pacchetto" />
+        <fieldset class="form-block">
+          <legend data-form-kind-legend>Pacchetto</legend>
+          <label>
+            <span data-tipo-label>Tipo di pacchetto</span>
+            <input type="text" name="tipo" list="tipi-suggeriti" maxlength="60" autocomplete="off"
+                   placeholder="Es. Base, Puppy, Recupero" />
+          </label>
+          <label data-lezioni-field>
+            <span>Numero di lezioni</span>
+            <input type="number" name="lezioni" min="1" step="1" required />
+          </label>
+          <label>
+            <span>Prezzo totale (€)</span>
+            <input type="number" name="prezzo" min="0.01" step="0.01" required />
+          </label>
+        </fieldset>
+        <fieldset class="form-block" data-receipt-fields>
+          <legend>Pagamento</legend>
+          <div data-initial-receipts></div>
+          <button type="button" class="btn-small" data-add-acconto>+ Aggiungi acconto</button>
+          <p class="form-hint" data-payment-summary>Il saldo verrà calcolato al salvataggio.</p>
+        </fieldset>
+        <fieldset class="form-block" data-schedule-fields>
+          <legend data-schedule-legend>Date lezioni</legend>
+          <p class="form-hint">Compila le date che conosci: le altre si potranno aggiungere dal calendario.</p>
+          <div data-schedule-rows></div>
+          <p class="form-hint" data-schedule-summary></p>
+        </fieldset>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary" data-submit-label>Aggiungi pacchetto</button>
+          <button type="button" class="btn-action" data-cancel="${CARD_FORMS.pacchetto}">Annulla</button>
+          <button type="button" class="btn-action btn-danger" data-delete-pacchetto hidden>Elimina</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+function emptyState(text) {
+  const div = document.createElement("div");
+  div.className = "list-empty";
+  div.textContent = text;
+  return div;
+}
+
+function fillDatalist(list, values) {
+  if (!list) return;
+  list.innerHTML = "";
+  for (const value of values) {
+    const opt = document.createElement("option");
+    opt.value = value;
+    list.appendChild(opt);
+  }
+}
+
+function fillCardDatalists(box) {
+  const tipi = new Set();
+  for (const pk of data.pacchetti) if (pk.tipo) tipi.add(pk.tipo);
+  for (const a of data.appuntamenti) if (a.tipo) tipi.add(a.tipo);
+  fillDatalist(box.querySelector("#tipi-suggeriti"),
+    [...tipi].sort((a, b) => a.localeCompare(b, "it")));
+  const istruttori = new Set();
+  for (const pk of data.pacchetti) if (pk.istruttore) istruttori.add(pk.istruttore);
+  for (const a of data.appuntamenti) if (a.istruttore) istruttori.add(a.istruttore);
+  fillDatalist(box.querySelector("#istruttori-suggeriti"),
+    [...istruttori].sort((a, b) => a.localeCompare(b, "it")));
+  fillDatalist(box.querySelector("#note-incasso-suggerite"),
+    ["Acconto 1", "Acconto 2", "Acconto 3", "Saldo"]);
+}
+
+function lezioneLabel(pk) {
+  if (!pk) return "Lezione";
+  if (pk.categoria === "singola") {
+    return "Lezione singola" + (pk.tipo ? " · " + pk.tipo : "");
+  }
+  return pacchettoLabel(pk.tipo);
+}
+
+function lezioneDescrizione(pk) {
+  if (pk.categoria === "singola") {
+    return "Lezione singola" + (pk.tipo ? " · " + pk.tipo : "");
+  }
+  return pacchettoDescrizione(pk.tipo, pk.lezioni);
+}
+
+function syncPacchettoForm(panel) {
+  const form = panel ? panel.querySelector("form") : null;
+  if (!form) return;
+  const idField = form.elements.namedItem("id");
+  const categoriaField = form.elements.namedItem("categoria");
+  const id = Number(idField ? idField.value : 0);
+  const categoria = categoriaField && categoriaField.value === "singola" ? "singola" : "pacchetto";
+  const title = panel.querySelector("[data-form-title]");
+  const kindLegend = panel.querySelector("[data-form-kind-legend]");
+  const scheduleLegend = panel.querySelector("[data-schedule-legend]");
+  const tipoLabel = panel.querySelector("[data-tipo-label]");
+  const lezioniField = panel.querySelector("[data-lezioni-field]");
+  const submit = panel.querySelector("[data-submit-label]");
+  const singola = categoria === "singola";
+  if (title) {
+    title.textContent = id ? (singola ? "Modifica lezione" : "Modifica pacchetto")
+      : (singola ? "Lezione singola" : "Pacchetto");
+  }
+  if (kindLegend) kindLegend.textContent = singola ? "Lezione singola" : "Pacchetto";
+  if (scheduleLegend) scheduleLegend.textContent = singola ? "Data lezione" : "Date lezioni";
+  if (tipoLabel) tipoLabel.textContent = singola ? "Tipo di lezione" : "Tipo di pacchetto";
+  if (lezioniField) lezioniField.hidden = singola;
+  const lezioni = form.elements.namedItem("lezioni");
+  if (lezioni) {
+    if (singola || !lezioni.value) lezioni.value = "1";
+  }
+  const prezzoField = form.elements.namedItem("prezzo");
+  if (prezzoField) prezzoField.min = singola ? "0" : "0.01";
+  if (submit) {
+    submit.textContent = id ? "Salva modifiche"
+      : (singola ? "Aggiungi lezione" : "Aggiungi pacchetto");
+  }
+  const deleteBtn = panel.querySelector("[data-delete-pacchetto]");
+  if (deleteBtn) deleteBtn.hidden = !id;
+  form.dataset.newBtn = categoria === "singola" ? "cliente-btn-nuova-singola" : "cliente-btn-nuovo-pacchetto";
+  const receipt = panel.querySelector("[data-receipt-fields]");
+  if (receipt) receipt.hidden = id > 0;
+  const schedule = panel.querySelector("[data-schedule-fields]");
+  if (schedule) schedule.hidden = id > 0;
+  if (!id) {
+    const receiptsBox = panel.querySelector("[data-initial-receipts]");
+    if (receiptsBox && !receiptsBox.children.length) addInitialReceiptRow(panel);
+    syncScheduleRows(panel);
+  }
+  refreshPacchettoForm(panel);
+}
+
+function refreshPacchettoForm(panel) {
+  const form = panel ? panel.querySelector("form") : null;
+  if (!form) return;
+  const id = Number(form.elements.namedItem("id").value || 0);
+  const summary = panel.querySelector("[data-payment-summary]");
+  if (id) {
+    const pk = data.pacchetti.find(x => x.id === id);
+    const linked = pk ? data.pagamenti.find(p => p.pacchettoId === pk.id) : null;
+    if (summary) {
+      summary.textContent = linked
+        ? "Pratica attuale: incassato " + money(totaleIncassi(linked.id)) + " · saldo " +
+          money(saldoPagamento(linked)) + ". Usa Registra incasso per gli aggiornamenti."
+        : "Nessun pagamento collegato a questo pacchetto.";
+    }
+    return;
+  }
+  const prezzo = Number(form.elements.namedItem("prezzo").value) || 0;
+  const receipts = [...panel.querySelectorAll("[data-initial-receipt]")];
+  const incassato = receipts.reduce((s, row) => {
+    const value = Number(row.querySelector('[data-field="importo"]').value) || 0;
+    return s + Math.max(0, value);
+  }, 0);
+  if (summary) {
+    if (prezzo > 0 && incassato > prezzo + 0.005) {
+      summary.textContent = "Gli acconti superano il prezzo totale.";
+    } else if (prezzo > 0) {
+      summary.textContent = "Acconti: " + money(Math.round(incassato * 100) / 100) +
+        " · Saldo: " + money(Math.max(0, Math.round((prezzo - incassato) * 100) / 100));
+    } else {
+      summary.textContent = "Il saldo verrà calcolato al salvataggio.";
+    }
+  }
+  const rows = [...panel.querySelectorAll("[data-schedule-row]")];
+  let filled = 0;
+  let conflicts = 0;
+  for (const row of rows) {
+    const dateText = row.querySelector('[data-field="data"]').value;
+    const date = parseDateInput(dateText);
+    const time = row.querySelector('[data-field="ora"]').value;
+    const status = row.querySelector("[data-row-status]");
+    row.classList.remove("is-conflict", "is-incomplete", "is-filled");
+    if (!dateText && !time) {
+      if (status) status.textContent = "Da programmare";
+      continue;
+    }
+    if (!date || !time) {
+      if (status) status.textContent = "Compila data e ora";
+      row.classList.add("is-incomplete");
+      continue;
+    }
+    filled++;
+    row.classList.add("is-filled");
+    const conflict = data.appuntamenti.find(a => a.data === date && a.ora === time);
+    if (conflict) {
+      conflicts++;
+      row.classList.add("is-conflict");
+      if (status) status.textContent = "Occupato";
+    } else if (status) {
+      status.textContent = "Libero";
+    }
+  }
+  const scheduleSummary = panel.querySelector("[data-schedule-summary]");
+  if (scheduleSummary) {
+    scheduleSummary.textContent = filled + " di " + rows.length + " lezioni programmate" +
+      (conflicts ? " · " + conflicts + " conflitti" : "");
+    scheduleSummary.classList.toggle("is-error", conflicts > 0);
+  }
+}
+
+function addInitialReceiptRow(panel, values) {
+  const box = panel ? panel.querySelector("[data-initial-receipts]") : null;
+  if (!box) return;
+  const row = document.createElement("div");
+  row.className = "dynamic-row dynamic-row--payment";
+  row.dataset.initialReceipt = "";
+  row.innerHTML = `
+    <label class="dynamic-row__field"><span>Importo (€)</span>
+      <input type="number" min="0.01" step="0.01" data-field="importo" />
+    </label>
+    <button type="button" class="btn-small btn-small--danger" data-remove-acconto>Rimuovi</button>`;
+  row.querySelector('[data-field="importo"]').value = values && values.importo ? String(values.importo) : "";
+  box.appendChild(row);
+  refreshPacchettoForm(panel);
+}
+
+function addScheduleRow(panel, values) {
+  const box = panel ? panel.querySelector("[data-schedule-rows]") : null;
+  if (!box) return;
+  const defaultInstructor = "";
+  const row = document.createElement("div");
+  row.className = "dynamic-row dynamic-row--schedule";
+  row.dataset.scheduleRow = "";
+  row.innerHTML = `
+    <label class="dynamic-row__field dynamic-row__field--data"><span>Data</span>
+      ${dateFieldHtml('data-field="data"')}
+    </label>
+    <label class="dynamic-row__field dynamic-row__field--ora"><span>Ora</span>
+      <input type="time" data-field="ora" />
+    </label>
+    <label class="dynamic-row__field dynamic-row__field--istruttore"><span>Istruttore</span>
+      <input type="text" list="istruttori-suggeriti" data-field="istruttore" />
+    </label>
+    <span class="dynamic-row__status" data-row-status></span>`;
+  const rawDate = (values && values.data) || "";
+  row.querySelector('[data-field="data"]').value = isIsoDate(rawDate) ? isoToDateLabel(rawDate) : rawDate;
+  row.querySelector('[data-field="ora"]').value = (values && values.ora) || "";
+  row.querySelector('[data-field="istruttore"]').value = (values && values.istruttore) || defaultInstructor;
+  box.appendChild(row);
+}
+
+function syncScheduleRows(panel) {
+  const form = panel ? panel.querySelector("form") : null;
+  const box = panel ? panel.querySelector("[data-schedule-rows]") : null;
+  if (!form || !box) return;
+  const input = form.elements.namedItem("lezioni");
+  let count = Number(input && input.value);
+  if (!Number.isInteger(count) || count < 1) count = 1;
+  count = Math.min(count, 60);
+  while (box.children.length < count) addScheduleRow(panel);
+  while (box.children.length > count) box.lastElementChild.remove();
+  refreshPacchettoForm(panel);
+}
+
+function readInitialReceipts(panel) {
+  return [...(panel ? panel.querySelectorAll("[data-initial-receipt]") : [])].map((row, i) => ({
+    importo: Math.round((Number(row.querySelector('[data-field="importo"]').value) || 0) * 100) / 100,
+    data: todayStr(),
+    nota: "Acconto " + (i + 1),
+  })).filter(r => r.importo !== 0);
+}
+
+function readScheduleRows(panel) {
+  return [...(panel ? panel.querySelectorAll("[data-schedule-row]") : [])].map(row => ({
+    data: parseDateInput(row.querySelector('[data-field="data"]').value),
+    ora: row.querySelector('[data-field="ora"]').value,
+    istruttore: row.querySelector('[data-field="istruttore"]').value.trim(),
+  })).filter(r => r.data || r.ora);
+}
+
+function statoPagamentoLabel(p) {
+  const stato = statoPagamento(p);
+  if (stato === "Parziale") return "Parzialmente pagato";
+  if (stato === "Da verificare") return "Da verificare";
+  if (stato === "Pagato") return "Pagato";
+  return "Da pagare";
+}
+
+function nextLezioneLabel(apps) {
+  if (!apps.length) return "";
+  const now = new Date();
+  const sorted = [...apps].sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora));
+  const next = sorted.find(a => {
+    const when = new Date(a.data + "T" + a.ora + ":00");
+    return !isNaN(when.getTime()) && when >= now;
+  });
+  const a = next || sorted[sorted.length - 1];
+  return a ? isoToDateLabel(a.data) + (a.ora ? " · " + a.ora : "") : "";
+}
+
+function renderPaymentBlock(block, pk) {
+  block.innerHTML = "";
+  block.removeAttribute("data-id");
+  const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
+  if (!linked) {
+    block.innerHTML = `<div class="list-empty">Nessun pagamento collegato.</div>
+      <div class="lezione-block__actions">
+        <button type="button" class="btn-small" data-action="modifica-pacchetto">Aggiungi pagamento</button>
+      </div>`;
+    return;
+  }
+  if (linked.clienteId !== pk.clienteId) {
+    block.innerHTML = `<div class="list-empty">Pagamento collegato a un altro cliente.</div>`;
+    return;
+  }
+  block.dataset.id = linked.id;
+  const badge = statoBadge(linked);
+  const inc = totaleIncassi(linked.id);
+  const saldo = saldoPagamento(linked);
+  const receipts = incassiDi(linked.id).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  block.innerHTML = `
+    <div class="payment-head">
+      <span class="badge ${badge.cls}"></span>
+      <span class="payment-date" data-date></span>
+    </div>
+    <div class="payment-line" data-description></div>
+    <div class="payment-line" data-money></div>
+    <div class="payment-line" data-balance></div>
+    <div class="receipt-list" data-receipts></div>
+    <div class="lezione-block__actions">
+      ${(saldo > 0 || linked.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="registra-incasso">Registra incasso</button>' : ""}
+      ${(saldo > 0 && !linked.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="salda-pagamento">Segna saldato</button>' : ""}
+      ${linked.incassoDaVerificare ? '<button type="button" class="btn-small" data-action="nessun-incasso">Nessun incasso</button>' : ""}
+    </div>
+    <form class="receipt-form" data-form="incasso" aria-label="Registra incasso" hidden>
+      <input type="hidden" name="pagamentoId" value="${linked.id}" />
+      <label><span>Importo incassato (€)</span>
+        <input type="number" name="importo" min="0.01" step="0.01" max="${linked.incassoDaVerificare ? linked.importo : saldo}" required />
+      </label>
+      <label><span>Data incasso</span>${dateFieldHtml('name="data" required')}</label>
+      <label><span>Nota (opzionale)</span><input type="text" name="nota" list="note-incasso-suggerite" autocomplete="off" /></label>
+      <div class="form-actions">
+        <button type="submit" class="btn-action btn-primary">Salva incasso</button>
+        <button type="button" class="btn-action" data-cancel-receipt>Annulla</button>
+      </div>
+    </form>`;
+  block.querySelector(".badge").textContent = badge.txt;
+  block.querySelector("[data-description]").textContent = linked.descrizione || "Pagamento";
+  block.querySelector("[data-date]").textContent = "Contratto del " +
+    (linked.data ? isoToDateLabel(linked.data) : "data non valida");
+  const moneyLine = linked.incassoDaVerificare
+    ? "Contratto: " + money(linked.importo) + " · Incassato: da verificare"
+    : "Contratto: " + money(linked.importo) + " · Incassato: " + money(inc);
+  block.querySelector("[data-money]").textContent = moneyLine;
+  block.querySelector("[data-balance]").textContent = "Saldo: " + money(saldo);
+  const recBox = block.querySelector("[data-receipts]");
+  for (const r of receipts) {
+    const row = document.createElement("div");
+    row.className = "receipt-row";
+    row.innerHTML = `<span class="receipt-row__text"></span>
+      <button type="button" class="btn-tiny btn-tiny--danger" data-action="elimina-incasso" data-incasso-id="${r.id}">Rimuovi</button>`;
+    row.querySelector(".receipt-row__text").textContent =
+      (r.data ? isoToDateLabel(r.data) : "Data non valida") + " · " + money(r.importo) +
+      (r.nota ? " · " + r.nota : "");
+    recBox.appendChild(row);
+  }
+}
+
+function renderCalendarBlock(block, pk) {
+  const apps = data.appuntamenti.filter(a => a.pacchettoId === pk.id)
+    .sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora) || a.id - b.id);
+  const canAdd = apps.length < pk.lezioni;
+  block.innerHTML = `<div class="date-list" data-calendar-rows></div>
+    <div class="lezione-block__actions">
+      ${canAdd ? `<button type="button" class="btn-small" data-action="nuova-lezione" data-pacchetto-id="${pk.id}">+ Aggiungi lezione</button>` : ""}
+    </div>`;
+  const list = block.querySelector("[data-calendar-rows]");
+  if (!apps.length) {
+    list.appendChild(emptyState("Nessuna data."));
+    return;
+  }
+  for (const a of apps) {
+    const row = document.createElement("div");
+    row.className = "calendar-row calendar-row--compact";
+    row.dataset.id = a.id;
+    row.innerHTML = `
+      <div class="calendar-row__info">
+        <strong class="calendar-row__date"></strong>
+        <span class="calendar-row__meta"></span>
+      </div>
+      <div class="calendar-row__actions">
+        <button type="button" class="btn-tiny" data-action="modifica-appuntamento">Modifica</button>
+        <button type="button" class="btn-tiny btn-tiny--danger" data-action="elimina-appuntamento">Elimina</button>
+      </div>`;
+    row.querySelector(".calendar-row__date").textContent =
+      (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
+    row.querySelector(".calendar-row__meta").textContent =
+      (a.istruttore || pk.istruttore || "—") + " · " + a.tipo + " · " + (a.fatto ? "Fatto" : "Da fare");
+    list.appendChild(row);
+  }
+}
+
+function lezioneGroup(pk) {
+  const group = document.createElement("div");
+  group.className = "lezione-group";
+  group.dataset.id = pk.id;
+  group.dataset.categoria = pk.categoria;
+  const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
+  const ownLinked = linked && linked.clienteId === pk.clienteId ? linked : null;
+  const apps = data.appuntamenti.filter(a => a.pacchettoId === pk.id);
+  const payLabel = ownLinked ? statoPagamentoLabel(ownLinked) : "Senza pagamento";
+  const dateLabel = nextLezioneLabel(apps);
+  const metaParts = ["Lezioni " + pk.utilizzate + "/" + lezioniRimanenti(pk), payLabel];
+  if (dateLabel) metaParts.push(dateLabel);
+  group.innerHTML = `
+    <div class="lezione-row">
+      <div class="lezione-row__top">
+        <strong class="lezione-row__title"></strong>
+        <div class="lezione-row__actions">
+          <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica/Elimina</button>
+          <button type="button" class="btn-small" data-action="toggle-pagamento" aria-expanded="false">Pagamento</button>
+        </div>
+      </div>
+      <div class="lezione-row__meta" data-meta></div>
+    </div>
+    <div class="lezione-payment lezione-block--payments" hidden></div>
+    <div class="lezione-dates lezione-block--calendar"></div>`;
+  group.querySelector(".lezione-row__title").textContent = lezioneLabel(pk);
+  group.querySelector("[data-meta]").textContent = metaParts.join(" · ");
+  renderPaymentBlock(group.querySelector(".lezione-block--payments"), pk);
+  renderCalendarBlock(group.querySelector(".lezione-block--calendar"), pk);
+  return group;
+}
+
+function renderLezioneGroups(box, c) {
+  const links = clientLinks(c.id);
+  const pacchetti = links.pacchetti.filter(pk => pk.categoria !== "singola")
+    .sort((a, b) => (b.data || "").localeCompare(a.data || "") || b.id - a.id);
+  const singole = links.pacchetti.filter(pk => pk.categoria === "singola")
+    .sort((a, b) => (b.data || "").localeCompare(a.data || "") || b.id - a.id);
+  const pkgList = box.querySelector("#cliente-pacchetti-list");
+  const singleList = box.querySelector("#cliente-singole-list");
+  pkgList.innerHTML = "";
+  singleList.innerHTML = "";
+  if (!pacchetti.length) pkgList.appendChild(emptyState("Nessun pacchetto."));
+  for (const pk of pacchetti) pkgList.appendChild(lezioneGroup(pk));
+  if (!singole.length) singleList.appendChild(emptyState("Nessuna lezione singola."));
+  for (const pk of singole) singleList.appendChild(lezioneGroup(pk));
+}
+
+function renderClienteGestione(box, c) {
+  box.insertAdjacentHTML("beforeend", `
+    <datalist id="tipi-suggeriti"></datalist>
+    <datalist id="istruttori-suggeriti"></datalist>
+    <datalist id="note-incasso-suggerite"></datalist>
+    <section class="card-section" aria-labelledby="cliente-card-pacchetti">
+      ${cardSectionHead("cliente-card-pacchetti", "Pacchetto lezioni", "cliente-btn-nuovo-pacchetto", "+ Aggiungi pacchetto", CARD_FORMS.pacchetto)}
+      <div id="cliente-pacchetti-list" class="lezione-list"></div>
+    </section>
+    <section class="card-section" aria-labelledby="cliente-card-singole">
+      ${cardSectionHead("cliente-card-singole", "Lezione singola", "cliente-btn-nuova-singola", "+ Aggiungi lezione", CARD_FORMS.pacchetto)}
+      <div id="cliente-singole-list" class="lezione-list"></div>
+    </section>
+    ${pacchettoFormHtml(c.id)}
+    ${appuntamentoFormHtml(c.id)}`);
+  fillCardDatalists(box);
+  renderLezioneGroups(box, c);
+}
+
+function renderClienteStorico(box, links) {
+  box.insertAdjacentHTML("beforeend", `
+    <h4>Pacchetti</h4><div data-detail-pacchetti></div>
+    <h4>Lezioni singole</h4><div data-detail-singole></div>
+    <h4>Pagamenti</h4><div data-detail-pagamenti></div>
+    <h4>Appuntamenti</h4><div data-detail-appuntamenti></div>`);
+  const pkgBox = box.querySelector("[data-detail-pacchetti]");
+  const singleBox = box.querySelector("[data-detail-singole]");
+  const pacchetti = links.pacchetti.filter(pk => pk.categoria !== "singola");
+  const singole = links.pacchetti.filter(pk => pk.categoria === "singola");
+  if (!pacchetti.length) pkgBox.textContent = "Nessun pacchetto.";
+  if (!singole.length) singleBox.textContent = "Nessuna lezione singola.";
+  const appendLezione = (target, pk) => {
+    detailRow(target,
+      lezioneLabel(pk) + " · " + money(pk.prezzo),
+      "Lezioni: " + pk.lezioni + " · utilizzate: " + pk.utilizzate +
+        " · rimaste: " + Math.max(0, pk.lezioni - pk.utilizzate));
+  };
+  for (const pk of pacchetti) appendLezione(pkgBox, pk);
+  for (const pk of singole) appendLezione(singleBox, pk);
+
+  const payBox = box.querySelector("[data-detail-pagamenti]");
+  if (!links.pagamenti.length) payBox.textContent = "Nessun pagamento.";
+  for (const p of [...links.pagamenti].sort((a, b) => (b.data || "").localeCompare(a.data || ""))) {
+    detailRow(payBox,
+      (p.data ? isoToDateLabel(p.data) : "Data non valida") + " · " + money(p.importo)
+        + (p.descrizione ? " · " + p.descrizione : ""),
+      statoPagamento(p) + " · incassato " + money(totaleIncassi(p.id))
+        + " · saldo " + money(saldoPagamento(p)));
+  }
+
+  const appBox = box.querySelector("[data-detail-appuntamenti]");
+  if (!links.appuntamenti.length) appBox.textContent = "Nessun appuntamento.";
+  for (const a of [...links.appuntamenti].sort((x, y) => (x.data + x.ora).localeCompare(y.data + y.ora))) {
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    detailRow(appBox,
+      isoToDateLabel(a.data) + " · " + a.ora + " · " + a.tipo +
+        (a.istruttore ? " · " + a.istruttore : "") +
+        (pk ? " · " + lezioneLabel(pk) : ""),
+      a.fatto ? "Fatto" : "Da fare");
+  }
+}
+
+function captureOpenCardForms(box, clienteId) {
+  if (!box || box.hidden || box.dataset.clienteId !== String(clienteId)) return [];
+  return [...box.querySelectorAll(".form-panel")]
+    .filter(p => !p.hidden)
+    .map(p => {
+      const values = {};
+      const form = p.querySelector("form");
+      if (form) {
+        for (const el of form.elements) {
+          if (!el.name || el.name === "clienteId") continue;
+          values[el.name] = el.type === "checkbox" ? (el.checked ? "on" : "") : el.value;
+        }
+      }
+      const title = p.querySelector("[data-form-title]");
+      const receipt = p.querySelector("[data-receipt-fields]");
+      const initialReceipts = [...p.querySelectorAll("[data-initial-receipt]")].map(row => ({
+        importo: row.querySelector('[data-field="importo"]').value,
+      }));
+      const scheduleRows = [...p.querySelectorAll("[data-schedule-row]")].map(row => ({
+        data: row.querySelector('[data-field="data"]').value,
+        ora: row.querySelector('[data-field="ora"]').value,
+        istruttore: row.querySelector('[data-field="istruttore"]').value,
+      }));
+      return {
+        id: p.id,
+        title: title ? title.textContent : "",
+        receiptHidden: receipt ? receipt.hidden : null,
+        values,
+        initialReceipts,
+        scheduleRows,
+      };
+    });
+}
+
+function restoreOpenCardForms(box, snapshot) {
+  if (!box || box.hidden || !snapshot.length) return;
+  for (const item of snapshot) {
+    const panel = box.querySelector("#" + item.id);
+    if (!panel) continue;
+    const form = panel.querySelector("form");
+    if (!form) continue;
+    const recordId = Number(item.values.id || 0);
+    if (recordId) {
+      const kind = form.dataset.form;
+      const exists = kind === "pagamento" ? data.pagamenti.some(p => p.id === recordId)
+        : kind === "appuntamento" ? data.appuntamenti.some(a => a.id === recordId)
+          : kind === "pacchetto" ? data.pacchetti.some(pk => pk.id === recordId)
+            : true;
+      if (!exists) continue;
+    }
+    panel.hidden = false;
+    const heading = panel.querySelector("[data-form-title]");
+    if (heading) {
+      if (!heading.id) heading.id = panel.id + "-title";
+      panel.setAttribute("role", "group");
+      panel.setAttribute("aria-labelledby", heading.id);
+      if (item.title) heading.textContent = item.title;
+    }
+    const receipt = panel.querySelector("[data-receipt-fields]");
+    if (receipt && item.receiptHidden !== null) receipt.hidden = item.receiptHidden;
+    if (panel.id === CARD_FORMS.pacchetto) {
+      const schedule = panel.querySelector("[data-schedule-fields]");
+      if (schedule) schedule.hidden = recordId > 0;
+    }
+    for (const [name, value] of Object.entries(item.values)) {
+      const el = form.elements.namedItem(name);
+      if (!el) continue;
+      if (el.type === "checkbox") {
+        el.checked = value === "on";
+        continue;
+      }
+      if (el.tagName === "SELECT" && ![...el.options].some(o => o.value === value)) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value;
+        el.appendChild(opt);
+      }
+      el.value = value;
+    }
+    if (panel.id === CARD_FORMS.pacchetto) {
+      const receiptsBox = panel.querySelector("[data-initial-receipts]");
+      if (receiptsBox && item.initialReceipts && item.initialReceipts.length) {
+        receiptsBox.innerHTML = "";
+        for (const r of item.initialReceipts) addInitialReceiptRow(panel, r);
+      }
+      const scheduleBox = panel.querySelector("[data-schedule-rows]");
+      if (scheduleBox && item.scheduleRows && item.scheduleRows.length) {
+        scheduleBox.innerHTML = "";
+        for (const r of item.scheduleRows) addScheduleRow(panel, r);
+      }
+    }
+    syncFormExpanded(panel.id);
+    if (panel.id === CARD_FORMS.pacchetto) syncPacchettoForm(panel);
+  }
+}
+
 function renderClienteDettaglioInto(boxId, clienteId) {
   const box = document.getElementById(boxId);
   if (!box) return;
+  // Conserva i valori dei form aperti se la scheda viene ridisegnata per lo stesso cliente.
+  const formSnapshot = boxId === "cliente-dettaglio" ? captureOpenCardForms(box, clienteId) : [];
   const c = clienteById(clienteId);
   if (!c) {
     if (boxId === "archivio-dettaglio") selectedArchivioId = 0;
     else selectedClienteId = 0;
     box.hidden = true;
     box.innerHTML = "";
+    delete box.dataset.clienteId;
     return;
   }
   box.hidden = false;
+  box.dataset.clienteId = String(clienteId);
   const closeAction = boxId === "archivio-dettaglio" ? "chiudi-dettaglio-archivio" : "chiudi-dettaglio";
   box.innerHTML = `
     <div class="detail-panel__head">
@@ -954,10 +1850,7 @@ function renderClienteDettaglioInto(boxId, clienteId) {
       <button type="button" class="btn-small" data-action="${closeAction}">Chiudi</button>
     </div>
     <div class="detail-panel__meta" data-detail-meta></div>
-    <div class="detail-panel__totals" data-detail-totals></div>
-    <h4>Pagamenti</h4><div data-detail-pagamenti></div>
-    <h4>Appuntamenti</h4><div data-detail-appuntamenti></div>
-    <h4>Pacchetti</h4><div data-detail-pacchetti></div>`;
+    <div class="detail-panel__totals" data-detail-totals></div>`;
   box.querySelector("[data-detail-title]").textContent = c.nome;
   const meta = ["Cane: " + (c.cane || "—")];
   if (c.razza) meta.push("Razza: " + c.razza);
@@ -980,28 +1873,10 @@ function renderClienteDettaglioInto(boxId, clienteId) {
     + "  ·  Appuntamenti: " + links.appuntamenti.length + " (" + fatti + " fatti)"
     + "  ·  Lezioni rimaste: " + rimanenti;
 
-  const payBox = box.querySelector("[data-detail-pagamenti]");
-  if (!links.pagamenti.length) payBox.textContent = "Nessun pagamento.";
-  for (const p of [...links.pagamenti].sort((a, b) => (b.data || "").localeCompare(a.data || ""))) {
-    detailRow(payBox,
-      (p.data ? isoToDateLabel(p.data) : "Data non valida") + " · " + money(p.importo)
-        + (p.descrizione ? " · " + p.descrizione : ""),
-      statoPagamento(p) + " · incassato " + money(totaleIncassi(p.id))
-        + " · saldo " + money(saldoPagamento(p)));
-  }
-
-  const appBox = box.querySelector("[data-detail-appuntamenti]");
-  if (!links.appuntamenti.length) appBox.textContent = "Nessun appuntamento.";
-  for (const a of [...links.appuntamenti].sort((x, y) => (x.data + x.ora).localeCompare(y.data + y.ora))) {
-    detailRow(appBox, isoToDateLabel(a.data) + " · " + a.ora + " · " + a.tipo, a.fatto ? "Fatto" : "Da fare");
-  }
-
-  const pkBox = box.querySelector("[data-detail-pacchetti]");
-  if (!links.pacchetti.length) pkBox.textContent = "Nessun pacchetto.";
-  for (const pk of links.pacchetti) {
-    detailRow(pkBox,
-      pk.lezioni + " lezioni · " + money(pk.prezzo) + " · acquisto " + (pk.data ? isoToDateLabel(pk.data) : "—"),
-      "Utilizzate: " + pk.utilizzate + " · rimaste: " + Math.max(0, pk.lezioni - pk.utilizzate));
+  if (boxId === "archivio-dettaglio") renderClienteStorico(box, links);
+  else {
+    renderClienteGestione(box, c);
+    restoreOpenCardForms(box, formSnapshot);
   }
 }
 
@@ -1105,7 +1980,7 @@ function fillClienteRow(li, c) {
   li.querySelector(".list-item__note").textContent = parts.join("  ·  ");
 }
 
-function renderClienti() {
+function renderClienti(skipDetail) {
   const ul = document.getElementById("clienti-list");
   ul.innerHTML = "";
   const selected = clienteById(selectedClienteId);
@@ -1134,7 +2009,6 @@ function renderClienti() {
       <div class="list-item__actions">
         <button type="button" class="btn-small" data-action="scheda-cliente">Scheda</button>
         <button type="button" class="btn-small" data-action="modifica-cliente">Modifica</button>
-        <button type="button" class="btn-small" data-action="rinomina-cliente">Rinomina</button>
         <button type="button" class="btn-small" data-action="archivia-cliente">Archivia</button>
         <button type="button" class="btn-small btn-small--danger" data-action="elimina-cliente">Elimina</button>
       </div>`;
@@ -1153,11 +2027,80 @@ function renderClienti() {
     }
     ul.appendChild(li);
   }
-  renderClienteDettaglio();
+  if (!skipDetail) renderClienteDettaglio();
   renderOrfani();
 }
 
-function renderArchivio() {
+/* Le lezioni passate sono archiviate dal giorno successivo alla loro data. */
+function lezioneArchiviata(a) {
+  return !!a && !!a.data && a.data < todayStr();
+}
+
+function lezioniArchiviate() {
+  return data.appuntamenti
+    .filter(lezioneArchiviata)
+    .sort((a, b) => (b.data + b.ora).localeCompare(a.data + a.ora) || b.id - a.id);
+}
+
+function renderArchivioLezioni() {
+  const ul = document.getElementById("archivio-lezioni-list");
+  if (!ul) return;
+  const query = filterValue("filtro-archivio-lezioni");
+  const all = lezioniArchiviate();
+  const rows = all.filter(a => {
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    return matchesText(query, clienteNome(a.clienteId), istruttoreAppuntamento(a), a.tipo,
+      isoToDateLabel(a.data), pk ? lezioneLabel(pk) : "");
+  });
+  ul.innerHTML = "";
+  let lastDate = null;
+  for (const a of rows) {
+    if (a.data !== lastDate) {
+      lastDate = a.data;
+      const head = document.createElement("li");
+      head.className = "agenda-day";
+      const parsed = new Date(a.data + "T00:00:00");
+      head.textContent = parsed && !isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })
+        : isoToDateLabel(a.data);
+      ul.appendChild(head);
+    }
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    const li = document.createElement("li");
+    li.className = "list-item is-archived archive-lesson";
+    li.dataset.id = a.id;
+    li.dataset.date = a.data;
+    li.innerHTML = `
+      <div class="list-item__head">
+        <span class="list-item__title"></span>
+        <span class="badge ${a.fatto ? "badge--ok" : "badge--neutral"}"></span>
+      </div>
+      <div class="list-item__meta"></div>
+      <div class="list-item__note"></div>`;
+    li.querySelector(".list-item__title").textContent =
+      clienteNome(a.clienteId) + " · " + (a.ora || "—");
+    li.querySelector(".badge").textContent = a.fatto ? "Fatto" : "Scaduta";
+    li.querySelector(".list-item__meta").textContent =
+      "Istruttore: " + (istruttoreAppuntamento(a) || "—") + " · Tipo: " + (a.tipo || "—");
+    li.querySelector(".list-item__note").textContent = pk ? lezioneLabel(pk) : "Senza lezione";
+    ul.appendChild(li);
+  }
+  if (!rows.length) {
+    const li = document.createElement("li");
+    li.className = "list-empty";
+    li.textContent = all.length
+      ? "Nessuna lezione archiviata corrisponde alla ricerca."
+      : "Nessuna lezione archiviata. Le lezioni svolte o scadute compaiono qui dopo la mezzanotte.";
+    ul.appendChild(li);
+  }
+  const count = document.getElementById("archivio-lezioni-count");
+  if (count) {
+    count.textContent = countLabel(rows.length, "lezione", "lezioni");
+    count.hidden = all.length === 0;
+  }
+}
+
+function renderArchivio(skipDetail) {
   const ul = document.getElementById("archivio-list");
   if (!ul) return;
   ul.innerHTML = "";
@@ -1194,12 +2137,94 @@ function renderArchivio() {
       : "Nessun cliente archiviato.";
     ul.appendChild(li);
   }
-  renderArchivioDettaglio();
+  if (!skipDetail) renderArchivioDettaglio();
   const count = document.getElementById("archivio-count");
   if (count) {
     count.textContent = String(archiviati.length);
     count.hidden = archiviati.length === 0;
   }
+  const clientiCount = document.getElementById("archivio-clienti-count");
+  if (clientiCount) {
+    clientiCount.textContent = countLabel(sorted.length, "cliente", "clienti");
+    clientiCount.hidden = archiviati.length === 0;
+  }
+  renderArchivioLezioni();
+}
+
+function renderAppuntamenti() {
+  const ul = document.getElementById("appuntamenti-list");
+  if (!ul) return;
+  const query = filterValue("filtro-appuntamenti");
+  const stato = filterValue("filtro-appuntamenti-stato");
+  const periodo = filterValue("filtro-appuntamenti-periodo");
+  const categoria = filterValue("filtro-appuntamenti-categoria");
+  const today = todayStr();
+  const end = addDaysIso(today, 6);
+  const rows = data.appuntamenti.filter(a => {
+    if (!a.clienteId || !clienteById(a.clienteId)) return false;
+    if (a.data && a.data < today) return false;
+    if (stato === "fatti" && !a.fatto) return false;
+    if (stato === "da-fare" && a.fatto) return false;
+    if (periodo === "oggi" && a.data !== today) return false;
+    if (periodo === "7" && (a.data < today || a.data > end)) return false;
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    if (categoria === "pacchetto" && (!pk || pk.categoria === "singola")) return false;
+    if (categoria === "singola" && (!pk || pk.categoria !== "singola")) return false;
+    return matchesText(query, clienteNome(a.clienteId), a.istruttore, a.tipo,
+      a.data, isoToDateLabel(a.data), a.ora, pk ? lezioneLabel(pk) : "");
+  }).sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora) || a.id - b.id);
+
+  ul.innerHTML = "";
+  let lastDate = null;
+  for (const a of rows) {
+    if (a.data !== lastDate) {
+      lastDate = a.data;
+      const head = document.createElement("li");
+      head.className = "agenda-day";
+      const parsed = a.data ? new Date(a.data + "T00:00:00") : null;
+      head.textContent = parsed && !isNaN(parsed.getTime())
+        ? parsed.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })
+        : "Data non valida";
+      ul.appendChild(head);
+    }
+    const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+    const li = document.createElement("li");
+    li.className = "list-item";
+    li.dataset.id = a.id;
+    li.dataset.clienteId = a.clienteId;
+    li.innerHTML = `
+      <div class="list-item__head">
+        <span class="list-item__title"></span>
+        <span class="badge ${a.fatto ? "badge--ok" : "badge--neutral"}"></span>
+      </div>
+      <div class="list-item__meta"></div>
+      <div class="list-item__actions">
+        <button type="button" class="btn-small" data-action="modifica-appuntamento">Modifica</button>
+        ${!a.fatto ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna fatto</button>' : ""}
+        <button type="button" class="btn-small" data-action="vai-cliente" data-cliente-id="${a.clienteId}">Scheda cliente</button>
+        <button type="button" class="btn-small btn-small--danger" data-action="elimina-appuntamento">Elimina</button>
+      </div>`;
+    li.querySelector(".list-item__title").textContent =
+      (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora + " · " + clienteNome(a.clienteId);
+    li.querySelector(".badge").textContent = a.fatto ? "Fatto" : "Da fare";
+    li.querySelector(".list-item__meta").textContent =
+      "Istruttore: " + (a.istruttore || "—") + " · Tipo: " + a.tipo +
+      (pk ? " · " + lezioneLabel(pk) : " · Senza lezione");
+    ul.appendChild(li);
+  }
+  if (!rows.length) {
+    const li = document.createElement("li");
+    li.className = "list-empty";
+    li.textContent = data.appuntamenti.length
+      ? "Nessuna lezione corrisponde ai filtri."
+      : "Nessuna lezione programmata.";
+    ul.appendChild(li);
+  }
+  const istruttori = new Set();
+  for (const pk of data.pacchetti) if (pk.istruttore) istruttori.add(pk.istruttore);
+  for (const a of data.appuntamenti) if (a.istruttore) istruttori.add(a.istruttore);
+  fillDatalist(document.getElementById("istruttori-globali"),
+    [...istruttori].sort((a, b) => a.localeCompare(b, "it")));
 }
 
 function badgeKind(stato) {
@@ -1216,145 +2241,6 @@ function statoBadge(p) {
   return { cls: "badge--neutral", txt: "Da pagare" };
 }
 
-function renderPagamenti() {
-  const ul = document.getElementById("pagamenti-list");
-  ul.innerHTML = "";
-  const query = filterValue("filtro-pagamenti");
-  const statoFiltro = filterValue("filtro-pagamenti-stato");
-  const rows = [...data.pagamenti].filter(p => {
-    if (statoFiltro && p.stato !== statoFiltro) return false;
-    return matchesText(query, clienteNome(p.clienteId), p.descrizione, p.importo,
-      money(p.importo), p.data, isoToDateLabel(p.data), p.stato);
-  }).sort((a, b) => {
-    const ka = a.data + String(a.id).padStart(6, "0");
-    const kb = b.data + String(b.id).padStart(6, "0");
-    return ka < kb ? 1 : -1; // data decrescente, poi id decrescente
-  });
-  for (const p of rows) {
-    const li = document.createElement("li");
-    li.className = "list-item";
-    li.dataset.id = p.id;
-    const badge = statoBadge(p);
-    const inc = totaleIncassi(p.id);
-    const saldo = saldoPagamento(p);
-    const receipts = incassiDi(p.id).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
-    li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge ${badge.cls}"></span>
-      </div>
-      <div class="list-item__meta" data-money></div>
-      <div class="list-item__meta" data-date></div>
-      ${p.incassoDaVerificare ? '<div class="list-item__note">Incasso legacy non registrato: inserisci l\'importo effettivamente ricevuto.</div>' : ""}
-      <div class="list-item__receipts" data-receipts></div>
-      <div class="list-item__actions">
-        ${(saldo > 0 || p.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="registra-incasso">Registra incasso</button>' : ""}
-        ${(saldo > 0 && !p.incassoDaVerificare) ? '<button type="button" class="btn-small" data-action="salda-pagamento">Segna saldato</button>' : ""}
-        ${p.incassoDaVerificare ? '<button type="button" class="btn-small" data-action="nessun-incasso">Nessun incasso</button>' : ""}
-        <button type="button" class="btn-small" data-action="modifica-pagamento">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-pagamento">Elimina</button>
-      </div>
-      <form class="receipt-form" data-form="incasso" aria-label="Registra incasso" hidden>
-        <input type="hidden" name="pagamentoId" value="${p.id}" />
-        <label><span>Importo incassato (€)</span>
-          <input type="number" name="importo" min="0.01" step="0.01" max="${p.incassoDaVerificare ? p.importo : saldo}" required />
-        </label>
-        <label><span>Data incasso</span><input type="date" name="data" required /></label>
-        <label><span>Nota (opzionale)</span><input type="text" name="nota" autocomplete="off" /></label>
-        <div class="form-actions">
-          <button type="submit" class="btn-action btn-primary">Salva incasso</button>
-          <button type="button" class="btn-action" data-cancel-receipt>Annulla</button>
-        </div>
-      </form>`;
-    li.querySelector(".list-item__title").textContent = clienteNome(p.clienteId);
-    li.querySelector(".badge").textContent = badge.txt;
-    const moneyLine = p.incassoDaVerificare
-      ? "Contratto: " + money(p.importo) + "  ·  Incassato: da verificare  ·  Saldo contrattuale: " + money(saldo)
-      : "Contratto: " + money(p.importo) + "  ·  Incassato: " + money(inc) + "  ·  Saldo: " + money(saldo);
-    li.querySelector("[data-money]").textContent = moneyLine + (p.descrizione ? "  ·  " + p.descrizione : "");
-    li.querySelector("[data-date]").textContent = "Data contratto: " + (p.data ? isoToDateLabel(p.data) : "non valida");
-    const recBox = li.querySelector("[data-receipts]");
-    for (const r of receipts) {
-      const row = document.createElement("div");
-      row.className = "receipt-row";
-      row.innerHTML = `<span class="receipt-row__text"></span><button type="button" class="btn-small btn-small--danger" data-action="elimina-incasso" data-incasso-id="${r.id}">Rimuovi</button>`;
-      row.querySelector(".receipt-row__text").textContent =
-        (r.data ? isoToDateLabel(r.data) : "Data non valida") + " · " + money(r.importo) + (r.nota ? " · " + r.nota : "");
-      recBox.appendChild(row);
-    }
-    ul.appendChild(li);
-  }
-  if (!ul.children.length) {
-    const li = document.createElement("li");
-    li.className = "list-empty";
-    li.textContent = data.pagamenti.length ? "Nessun pagamento corrisponde ai filtri." : "Nessun pagamento registrato.";
-    ul.appendChild(li);
-  }
-  // Aggiorna il select nei form (pagamento + appuntamento)
-  fillClienteSelects();
-}
-
-/* ===== Render appuntamenti ===== */
-function renderAppuntamenti() {
-  const ul = document.getElementById("appuntamenti-list");
-  ul.innerHTML = "";
-  const query = filterValue("filtro-appuntamenti");
-  const statoFiltro = filterValue("filtro-appuntamenti-stato");
-  const periodo = filterValue("filtro-appuntamenti-periodo");
-  const today = todayStr();
-  const end = addDaysIso(today, 6);
-  const rows = [...data.appuntamenti].filter(a => {
-    if (statoFiltro === "fatti" && !a.fatto) return false;
-    if (statoFiltro === "da-fare" && a.fatto) return false;
-    if (periodo === "oggi" && a.data !== today) return false;
-    if (periodo === "7" && (a.data < today || a.data > end)) return false;
-    if (periodo === "passati" && a.data >= today) return false;
-    return matchesText(query, clienteNome(a.clienteId), a.tipo, a.data, isoToDateLabel(a.data), a.ora);
-  }).sort((a, b) => {
-    const ka = a.data + a.ora + String(a.id);
-    const kb = b.data + b.ora + String(b.id);
-    return ka < kb ? -1 : 1;
-  });
-  let lastDate = null;
-  for (const a of rows) {
-    if (a.data !== lastDate) {
-      lastDate = a.data;
-      const head = document.createElement("li");
-      head.className = "agenda-day";
-      const parsed = a.data ? new Date(a.data + "T00:00:00") : null;
-      head.textContent = parsed && !isNaN(parsed.getTime())
-        ? parsed.toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })
-        : "Data non valida";
-      ul.appendChild(head);
-    }
-    const li = document.createElement("li");
-    li.className = "list-item";
-    li.dataset.id = a.id;
-    const badge = a.fatto ? "badge--ok" : "badge--neutral";
-    const badgeTxt = a.fatto ? "Fatto" : a.tipo;
-    li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge ${badge}"></span>
-      </div>
-      <div class="list-item__meta"></div>
-      <div class="list-item__actions">
-        ${!a.fatto ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna come fatto</button>' : ""}
-        <button type="button" class="btn-small" data-action="modifica-appuntamento">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-appuntamento">Elimina</button>
-      </div>`;
-    li.querySelector(".list-item__title").textContent = (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
-    li.querySelector(".badge").textContent = badgeTxt;
-    li.querySelector(".list-item__meta").textContent = "Cliente: " + clienteNome(a.clienteId);
-    ul.appendChild(li);
-  }
-  if (!ul.children.length) {
-    const li = document.createElement("li");
-    li.className = "list-empty";
-    li.textContent = data.appuntamenti.length ? "Nessun appuntamento corrisponde ai filtri." : "Nessun appuntamento registrato.";
-    ul.appendChild(li);
-  }
-}
 
 /* ===== Render resoconto ===== */
 /* Resoconto: finestra selezionabile di 12 mesi a ritroso dal mese corrente.
@@ -1492,11 +2378,201 @@ function fillMonthSelect() {
 }
 
 document.addEventListener("change", (e) => {
-  if (e.target.id === "resoconto-mese" || e.target.id === "resoconto-cliente") renderResoconto();
+  const id = e.target.id;
+  if (id === "resoconto-mese" || id === "resoconto-cliente") { renderResoconto(); return; }
+  if (id === "resoconto-collaboratore") { collabFilters.collaborator = e.target.value; renderResoconto(); return; }
+  if (id === "resoconto-coll-mese") { collabFilters.month = e.target.value; renderResoconto(); return; }
+  if (id === "resoconto-coll-anno") { collabFilters.year = e.target.value; renderResoconto(); return; }
+  if (id === "resoconto-coll-dal") { setCollabDateFilter("from", e.target.value); renderResoconto(); return; }
+  if (id === "resoconto-coll-al") { setCollabDateFilter("to", e.target.value); renderResoconto(); return; }
 });
+
+const RESOCONTO_MONTHS = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+  "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+
+/* Filtri della sezione Collaboratori. Sono solo stato di interfaccia. */
+const collabFilters = { collaborator: "", month: "", year: "", from: "", to: "" };
+
+function createEl(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function resocontoSectionHead(section, title, hint) {
+  section.appendChild(createEl("h3", "resoconto-section__title", title));
+  if (hint) section.appendChild(createEl("p", "resoconto-section__hint", hint));
+}
+
+function appendKpi(parent, label, value, meta, metaClass) {
+  const card = createEl("article", "resoconto-card");
+  card.appendChild(createEl("span", "resoconto-card__label", label));
+  card.appendChild(createEl("span", "resoconto-card__value", value));
+  if (meta) {
+    card.appendChild(createEl("span", "resoconto-card__meta" + (metaClass ? " " + metaClass : ""), meta));
+  }
+  parent.appendChild(card);
+}
+
+function appendChip(parent, text) {
+  parent.appendChild(createEl("span", "resoconto-chip", text));
+}
+
+function istruttoreAppuntamento(a) {
+  if (!a) return "";
+  const direct = (a.istruttore || "").trim();
+  if (direct) return direct;
+  const pk = a.pacchettoId ? data.pacchetti.find(p => p.id === a.pacchettoId) : null;
+  return pk && pk.istruttore ? pk.istruttore.trim() : "";
+}
+
+/* Registro derivato: nessun dato aggiuntivo viene salvato. */
+function collaboratorRegistry() {
+  const groups = new Map();
+  for (const a of data.appuntamenti) {
+    if (!a.fatto || !a.data) continue;
+    const name = istruttoreAppuntamento(a);
+    const key = name ? name.toLocaleLowerCase("it") : "__senza_istruttore__";
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, name: name || "Senza istruttore", days: new Map() };
+      groups.set(key, group);
+    }
+    const pk = a.pacchettoId ? data.pacchetti.find(p => p.id === a.pacchettoId) : null;
+    if (!group.days.has(a.data)) group.days.set(a.data, []);
+    group.days.get(a.data).push({
+      id: a.id,
+      ora: a.ora || "—",
+      clienteId: a.clienteId,
+      cliente: clienteNome(a.clienteId),
+      tipo: a.tipo || "—",
+      lezione: pk ? lezioneLabel(pk) : "Senza lezione",
+    });
+  }
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "it"));
+}
+
+function collabDateValue(raw) {
+  const iso = parseDateInput(raw);
+  return iso ? isoToDateLabel(iso) : raw;
+}
+
+function setCollabDateFilter(key, raw) {
+  const s = String(raw || "").trim();
+  if (!s) { collabFilters[key] = ""; return; }
+  const iso = parseDateInput(s);
+  collabFilters[key] = iso || s;
+}
+
+function readCollabPeriod() {
+  const fromRaw = String(collabFilters.from || "").trim();
+  const toRaw = String(collabFilters.to || "").trim();
+  const from = fromRaw ? parseDateInput(fromRaw) : "";
+  const to = toRaw ? parseDateInput(toRaw) : "";
+  const invalid = !!((fromRaw && !from) || (toRaw && !to) || (from && to && from > to));
+  return { fromRaw, toRaw, from, to, invalid };
+}
+
+function collabDateMatches(iso, period) {
+  if (period.from || period.to) {
+    if (period.from && iso < period.from) return false;
+    if (period.to && iso > period.to) return false;
+    return true;
+  }
+  if (collabFilters.year && iso.slice(0, 4) !== collabFilters.year) return false;
+  if (collabFilters.month && iso.slice(5, 7) !== collabFilters.month) return false;
+  return true;
+}
+
+function filteredCollaboratorRegistry(registry, period) {
+  if (period.invalid) return [];
+  return registry.map(group => {
+    const days = [...group.days.entries()]
+      .filter(([date]) => collabDateMatches(date, period))
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, lessons]) => ({
+        date,
+        lessons: [...lessons].sort((a, b) => (a.ora || "").localeCompare(b.ora || "") || a.id - b.id),
+      }));
+    return { ...group, days };
+  })
+    .filter(group => group.days.length)
+    .filter(group => !collabFilters.collaborator || group.key === collabFilters.collaborator);
+}
+
+function collaboratorPeriodLabel(period) {
+  if (period.invalid) return "Periodo collaboratori: intervallo non valido";
+  if (period.from || period.to) {
+    if (period.from && period.to) {
+      return "Periodo collaboratori: dal " + isoToDateLabel(period.from) + " al " + isoToDateLabel(period.to);
+    }
+    if (period.from) return "Periodo collaboratori: dal " + isoToDateLabel(period.from);
+    return "Periodo collaboratori: fino al " + isoToDateLabel(period.to);
+  }
+  const parts = [];
+  if (collabFilters.month) {
+    const idx = Number(collabFilters.month) - 1;
+    if (RESOCONTO_MONTHS[idx]) parts.push(RESOCONTO_MONTHS[idx]);
+  }
+  if (collabFilters.year) parts.push(collabFilters.year);
+  return "Periodo collaboratori: " + (parts.length ? parts.join(" ") : "tutto il periodo");
+}
+
+function appendSelectOption(select, value, text) {
+  const opt = document.createElement("option");
+  opt.value = value;
+  opt.textContent = text;
+  select.appendChild(opt);
+}
+
+function appendCollaboratorCard(parent, group) {
+  const card = createEl("details", "collaborator-card");
+  card.dataset.collaborator = group.key;
+  if (group.key === "__senza_istruttore__") card.classList.add("collaborator-card--warn");
+  const summary = createEl("summary", "collaborator-card__summary");
+  const main = createEl("span", "collaborator-card__main");
+  main.appendChild(createEl("strong", "collaborator-card__name", group.name));
+  const lessonsCount = group.days.reduce((sum, day) => sum + day.lessons.length, 0);
+  main.appendChild(createEl("span", "collaborator-card__meta",
+    countLabel(group.days.length, "giornata", "giornate") + " · " +
+    countLabel(lessonsCount, "lezione", "lezioni")));
+  summary.appendChild(main);
+  card.appendChild(summary);
+
+  const body = createEl("div", "collaborator-card__body");
+  for (const day of group.days) {
+    const dayDetails = createEl("details", "collab-day");
+    dayDetails.dataset.date = day.date;
+    const daySummary = createEl("summary", "collab-day__summary");
+    daySummary.appendChild(createEl("span", "collab-day__date", isoToDateLabel(day.date)));
+    daySummary.appendChild(createEl("span", "collab-day__count",
+      countLabel(day.lessons.length, "lezione", "lezioni")));
+    dayDetails.appendChild(daySummary);
+
+    const list = createEl("ul", "collab-day__list");
+    for (const lesson of day.lessons) {
+      const li = createEl("li", "collab-activity");
+      li.appendChild(createEl("span", "collab-activity__time", lesson.ora || "—"));
+      const parts = [lesson.cliente, lesson.lezione];
+      if (lesson.tipo && !lesson.lezione.toLocaleLowerCase("it").includes(lesson.tipo.toLocaleLowerCase("it"))) {
+        parts.push(lesson.tipo);
+      }
+      li.appendChild(createEl("span", "collab-activity__text", parts.join(" · ")));
+      list.appendChild(li);
+    }
+    dayDetails.appendChild(list);
+    body.appendChild(dayDetails);
+  }
+  card.appendChild(body);
+  parent.appendChild(card);
+}
 
 function renderResoconto() {
   const el = document.getElementById("resoconto");
+  if (!el) return;
+  const focusId = document.activeElement && document.activeElement.id;
+  const paymentsOpen = !!document.querySelector("#resoconto .resoconto-disclosure[open]");
   fillMonthSelect();
   fillReportClientSelect();
   const range = selectedMonth();
@@ -1513,38 +2589,37 @@ function renderResoconto() {
   const creditoTotale = crediti.reduce((s, x) => s + x.saldo, 0);
   const daVerificare = pagamentiDaVerificareAl(range.last, clienteFiltro);
   const daVerificareContratti = daVerificare.reduce((s, p) => s + p.importo, 0);
-  const nApp = data.appuntamenti.filter(a => a.data && inMonth(a.data)
-    && (!clienteFiltro || a.clienteId === clienteFiltro)).length;
-  const attivi = clienteFiltro
-    ? (clienteById(clienteFiltro).stato === "Attivo" ? 1 : 0)
-    : data.clienti.filter(c => c.stato === "Attivo").length;
+  const monthApps = data.appuntamenti.filter(a => a.data && inMonth(a.data)
+    && (!clienteFiltro || a.clienteId === clienteFiltro));
+  const svolte = monthApps.filter(a => a.fatto).length;
+  const daSvolgere = monthApps.length - svolte;
   const senzaData = incassiSenzaData(clienteFiltro);
+  const rimanentiTotali = data.pacchetti
+    .filter(pk => !clienteFiltro || pk.clienteId === clienteFiltro)
+    .reduce((s, pk) => s + lezioniRimanenti(pk), 0);
 
-  /* Trend incassi vs mese precedente: se il mese precedente è 0, mostra "—". */
   const selEl = document.getElementById("resoconto-mese");
   const selYm = selEl ? selEl.value : recentMonths(1)[0];
-  const prevYm = prevMonth(selYm);
-  const prevIncassato = incassatoMese(prevYm, clienteFiltro);
-  let trendLabel, trendCls;
+  const prevIncassato = incassatoMese(prevMonth(selYm), clienteFiltro);
+  let trendText, trendCls;
   if (prevIncassato === 0) {
-    trendLabel = "—";
+    trendText = "Trend vs mese precedente: —";
     trendCls = "";
   } else {
     const pct = ((incassato - prevIncassato) / prevIncassato) * 100;
     const abs = Math.abs(Math.round(pct));
     if (pct > 0) {
-      trendLabel = `+${abs} % (su)`;
+      trendText = "Trend vs mese precedente: +" + abs + "%";
       trendCls = "resoconto-trend--up";
     } else if (pct < 0) {
-      trendLabel = `−${abs} % (in calo)`;
+      trendText = "Trend vs mese precedente: −" + abs + "%";
       trendCls = "resoconto-trend--down";
     } else {
-      trendLabel = `0 % (invariato)`;
+      trendText = "Trend vs mese precedente: 0%";
       trendCls = "resoconto-trend--pari";
     }
   }
 
-  // Incidenza incassi per cliente: solo incassi effettivi nel periodo.
   const perCliente = new Map();
   for (const i of incassi) {
     const p = data.pagamenti.find(x => x.id === i.pagamentoId);
@@ -1559,97 +2634,196 @@ function renderResoconto() {
   });
 
   el.innerHTML = "";
-  const period = document.createElement("div");
-  period.className = "resoconto-period";
-  period.textContent = "Periodo: " + label + (clienteFiltro ? " · Cliente: " + clienteLabel : "");
-  el.appendChild(period);
+  el.appendChild(createEl("div", "resoconto-period",
+    "Periodo: " + label + (clienteFiltro ? " · Cliente: " + clienteLabel : "")));
 
-  const rows = [
-    { label: "Incassato effettivo nel mese", value: money(incassato) },
-    { label: "Crediti residui al fine mese", value: money(creditoTotale) },
-    { label: "Pagamenti con incasso da verificare", value: String(daVerificare.length) },
-    { label: "Appuntamenti nel mese", value: String(nApp) },
-    { label: "Clienti attivi", value: String(attivi) },
-  ];
-  for (const r of rows) {
-    const card = document.createElement("div");
-    card.className = "resoconto-card";
-    card.innerHTML = `<span class="resoconto-card__label"></span><span class="resoconto-card__value"></span>`;
-    card.querySelector(".resoconto-card__label").textContent = r.label;
-    card.querySelector(".resoconto-card__value").textContent = r.value;
-    el.appendChild(card);
+  /* 1. Riepilogo */
+  const overview = createEl("section", "resoconto-section");
+  resocontoSectionHead(overview, "Riepilogo", "Panoramica del periodo selezionato.");
+  const kpis = createEl("div", "resoconto-kpis");
+  appendKpi(kpis, "Incassato", money(incassato), trendText, trendCls);
+  appendKpi(kpis, "Crediti residui", money(creditoTotale), "al " + isoToDateLabel(range.last));
+  appendKpi(kpis, "Lezioni svolte", String(svolte),
+    monthApps.length
+      ? (daSvolgere ? countLabel(daSvolgere, "da svolgere", "da svolgere") : "Tutte svolte")
+      : "Nessuna lezione in programma");
+  overview.appendChild(kpis);
+  el.appendChild(overview);
+
+  /* 2. Lezioni e pagamenti */
+  const lessons = createEl("section", "resoconto-section");
+  resocontoSectionHead(lessons, "Lezioni", "Stato delle lezioni e situazione dei pagamenti.");
+  const chips = createEl("div", "resoconto-chips");
+  if (daSvolgere) appendChip(chips, countLabel(daSvolgere, "da svolgere", "da svolgere"));
+  if (rimanentiTotali) appendChip(chips, countLabel(rimanentiTotali, "rimanente", "rimanenti"));
+  if (chips.children.length) {
+    lessons.appendChild(chips);
+  } else if (!daVerificare.length && !senzaData.length) {
+    lessons.appendChild(createEl("p", "resoconto-empty",
+      svolte ? "Tutte le lezioni del periodo sono state svolte." : "Nessuna lezione nel periodo."));
   }
-
-  const trend = document.createElement("div");
-  trend.className = "resoconto-card resoconto-trend " + trendCls;
-  trend.innerHTML = `<span class="resoconto-card__label"></span><span class="resoconto-card__value"></span>`;
-  trend.querySelector(".resoconto-card__label").textContent = "Trend incassi vs mese precedente";
-  trend.querySelector(".resoconto-card__value").textContent = trendLabel;
-  el.appendChild(trend);
 
   if (daVerificare.length) {
-    const note = document.createElement("p");
-    note.className = "resoconto-note resoconto-note--warn";
-    note.textContent = daVerificare.length + " pagament" + (daVerificare.length === 1 ? "o" : "i")
-      + " legacy con incasso non registrato (contratti per " + money(daVerificareContratti)
-      + "): esclusi da incassi e crediti finché non verifichi l'importo ricevuto.";
-    el.appendChild(note);
+    lessons.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
+      countLabel(daVerificare.length, "pagamento legacy", "pagamenti legacy") +
+      " con incasso non registrato (contratti per " + money(daVerificareContratti) +
+      "): esclusi da incassi e crediti finché non verifichi l'importo ricevuto."));
   }
   if (senzaData.length) {
-    const note = document.createElement("p");
-    note.className = "resoconto-note resoconto-note--warn";
-    note.textContent = senzaData.length + " incass" + (senzaData.length === 1 ? "o" : "i")
-      + " senza data valida: esclus" + (senzaData.length === 1 ? "o" : "i")
-      + " dal totale mensile ma contat" + (senzaData.length === 1 ? "o" : "i")
-      + " nel saldo dei pagamenti.";
-    el.appendChild(note);
+    lessons.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
+      countLabel(senzaData.length, "incasso", "incassi") +
+      " senza data valida: esclusi dal totale mensile ma contati nel saldo dei pagamenti."));
   }
+
+  const detail = createEl("details", "resoconto-disclosure");
+  detail.open = paymentsOpen;
+  detail.appendChild(createEl("summary", "resoconto-disclosure__summary", "Dettaglio pagamenti, incassi ed export"));
+  const detailBody = createEl("div", "resoconto-disclosure__body");
+
+  detailBody.appendChild(createEl("p", "resoconto-section__hint",
+    "Le lezioni rimanenti rappresentano crediti da pacchetti inclusi nei crediti residui."));
 
   if (sortedCliente.length > 0) {
-    const wrap = document.createElement("div");
-    wrap.className = "resoconto-clienti";
-    const title = document.createElement("div");
-    title.className = "resoconto-clienti__title";
-    title.textContent = "Incidenza incassi per cliente";
-    wrap.appendChild(title);
-
-    const list = document.createElement("ul");
-    list.className = "resoconto-clienti__list";
+    const wrap = createEl("div", "resoconto-clienti");
+    wrap.appendChild(createEl("div", "resoconto-clienti__title", "Incassi per cliente"));
+    const list = createEl("ul", "resoconto-clienti__list");
     for (const [cid, tot] of sortedCliente) {
       const c = clienteById(cid);
-      const li = document.createElement("li");
-      li.className = "resoconto-cliente-row";
-      li.innerHTML = `<span class="resoconto-cliente-row__nome"></span><span class="resoconto-cliente-row__val"></span>`;
-      li.querySelector(".resoconto-cliente-row__nome").textContent = c ? c.nome : "Sconosciuto";
-      li.querySelector(".resoconto-cliente-row__val").textContent = money(tot);
+      const li = createEl("li", "resoconto-cliente-row");
+      li.appendChild(createEl("span", "resoconto-cliente-row__nome", c ? c.nome : "Sconosciuto"));
+      li.appendChild(createEl("span", "resoconto-cliente-row__val", money(tot)));
       list.appendChild(li);
     }
+    const total = createEl("li", "resoconto-cliente-row resoconto-cliente-row--totale");
+    total.appendChild(createEl("span", "resoconto-cliente-row__nome", "Totale"));
+    total.appendChild(createEl("span", "resoconto-cliente-row__val", money(incassato)));
+    list.appendChild(total);
     wrap.appendChild(list);
-
-    const t = document.createElement("li");
-    t.className = "resoconto-cliente-row resoconto-cliente-row--totale";
-    t.innerHTML = `<span class="resoconto-cliente-row__nome"></span><span class="resoconto-cliente-row__val"></span>`;
-    t.querySelector(".resoconto-cliente-row__nome").textContent = "Totale";
-    t.querySelector(".resoconto-cliente-row__val").textContent = money(incassato);
-    list.appendChild(t);
-    el.appendChild(wrap);
+    detailBody.appendChild(wrap);
   }
 
-  const rimanentiTotali = data.pacchetti
-    .filter(pk => !clienteFiltro || pk.clienteId === clienteFiltro)
-    .reduce((s, pk) => s + lezioniRimanenti(pk), 0);
-  const pkBlock = document.createElement("div");
-  pkBlock.className = "resoconto-pacchetti";
-  pkBlock.innerHTML = `
-    <span class="resoconto-pacchetti__label"></span>
-    <span class="resoconto-pacchetti__value"></span>
-    <span class="resoconto-pacchetti__note"></span>`;
-  pkBlock.querySelector(".resoconto-pacchetti__label").textContent = "Lezioni rimanenti totali";
-  pkBlock.querySelector(".resoconto-pacchetti__value").textContent = String(rimanentiTotali);
-  pkBlock.querySelector(".resoconto-pacchetti__note").textContent =
-    "Crediti da pacchetti inclusi nei crediti residui. Storico mensile consumi non disponibile.";
-  el.appendChild(pkBlock);
+  const csvActions = createEl("div", "resoconto-csv-actions");
+  const csvIncassi = createEl("button", "btn-action", "Esporta CSV incassi");
+  csvIncassi.type = "button";
+  csvIncassi.id = "btn-csv-incassi";
+  const csvPagamenti = createEl("button", "btn-action", "Esporta CSV pagamenti");
+  csvPagamenti.type = "button";
+  csvPagamenti.id = "btn-csv-pagamenti";
+  csvActions.appendChild(csvIncassi);
+  csvActions.appendChild(csvPagamenti);
+  detailBody.appendChild(csvActions);
 
+  detail.appendChild(detailBody);
+  lessons.appendChild(detail);
+  el.appendChild(lessons);
+
+  /* 3. Collaboratori */
+  const collab = createEl("section", "resoconto-section");
+  resocontoSectionHead(collab, "Collaboratori",
+    "Giornate ricavate dalle lezioni segnate come Fatto; le lezioni non svolte non contano.");
+  const registry = collaboratorRegistry();
+  const years = [...new Set(registry.flatMap(g => [...g.days.keys()].map(d => d.slice(0, 4))))]
+    .sort((a, b) => b.localeCompare(a));
+  if (collabFilters.collaborator && !registry.some(g => g.key === collabFilters.collaborator)) {
+    collabFilters.collaborator = "";
+  }
+  if (collabFilters.year && !years.includes(collabFilters.year)) collabFilters.year = "";
+  if (collabFilters.month && !RESOCONTO_MONTHS.some((_, i) => String(i + 1).padStart(2, "0") === collabFilters.month)) {
+    collabFilters.month = "";
+  }
+  const period = readCollabPeriod();
+  const filtered = filteredCollaboratorRegistry(registry, period);
+  const totalDays = filtered.reduce((sum, g) => sum + g.days.length, 0);
+  const totalLessons = filtered.reduce((sum, g) =>
+    sum + g.days.reduce((n, d) => n + d.lessons.length, 0), 0);
+
+  const filters = createEl("div", "collab-filters");
+  const collabSelect = createEl("select");
+  collabSelect.id = "resoconto-collaboratore";
+  collabSelect.setAttribute("aria-label", "Filtra per collaboratore");
+  appendSelectOption(collabSelect, "", "Tutti i collaboratori");
+  for (const group of registry) appendSelectOption(collabSelect, group.key, group.name);
+  collabSelect.value = collabFilters.collaborator;
+  const collabLabel = createEl("label", "resoconto-filter resoconto-filter--wide");
+  collabLabel.appendChild(createEl("span", null, "Collaboratore"));
+  collabLabel.appendChild(collabSelect);
+  filters.appendChild(collabLabel);
+
+  const monthSelect = createEl("select");
+  monthSelect.id = "resoconto-coll-mese";
+  monthSelect.setAttribute("aria-label", "Filtra per mese");
+  appendSelectOption(monthSelect, "", "Tutti i mesi");
+  RESOCONTO_MONTHS.forEach((name, i) => appendSelectOption(monthSelect, String(i + 1).padStart(2, "0"), name));
+  monthSelect.value = collabFilters.month;
+  const monthLabel = createEl("label", "resoconto-filter");
+  monthLabel.appendChild(createEl("span", null, "Mese"));
+  monthLabel.appendChild(monthSelect);
+  filters.appendChild(monthLabel);
+
+  const yearSelect = createEl("select");
+  yearSelect.id = "resoconto-coll-anno";
+  yearSelect.setAttribute("aria-label", "Filtra per anno");
+  appendSelectOption(yearSelect, "", "Tutti gli anni");
+  for (const year of years) appendSelectOption(yearSelect, year, year);
+  yearSelect.value = collabFilters.year;
+  const yearLabel = createEl("label", "resoconto-filter");
+  yearLabel.appendChild(createEl("span", null, "Anno"));
+  yearLabel.appendChild(yearSelect);
+  filters.appendChild(yearLabel);
+
+  const fromLabel = createEl("label", "resoconto-filter resoconto-filter--wide");
+  fromLabel.appendChild(createEl("span", null, "Dal"));
+  fromLabel.insertAdjacentHTML("beforeend", dateFieldHtml('id="resoconto-coll-dal" aria-label="Dal"'));
+  const fromInput = fromLabel.querySelector("input");
+  if (fromInput) fromInput.value = collabDateValue(collabFilters.from);
+  filters.appendChild(fromLabel);
+
+  const toLabel = createEl("label", "resoconto-filter resoconto-filter--wide");
+  toLabel.appendChild(createEl("span", null, "Al"));
+  toLabel.insertAdjacentHTML("beforeend", dateFieldHtml('id="resoconto-coll-al" aria-label="Al"'));
+  const toInput = toLabel.querySelector("input");
+  if (toInput) toInput.value = collabDateValue(collabFilters.to);
+  filters.appendChild(toLabel);
+
+  const reset = createEl("button", "btn-action collab-filters__reset", "Azzera filtri");
+  reset.type = "button";
+  reset.id = "resoconto-coll-reset";
+  filters.appendChild(reset);
+  collab.appendChild(filters);
+  collab.appendChild(createEl("p", "collab-filter-hint",
+    "Filtri indipendenti dal mese e dal cliente del riepilogo. Se compili Dal o Al, mese e anno vengono ignorati."));
+  collab.appendChild(createEl("p", "collab-period", collaboratorPeriodLabel(period)));
+  const summaryEl = createEl("p", "collab-summary",
+    countLabel(filtered.length, "collaboratore", "collaboratori") + " · " +
+    countLabel(totalDays, "giornata", "giornate") + " · " +
+    countLabel(totalLessons, "lezione", "lezioni"));
+  summaryEl.setAttribute("role", "status");
+  summaryEl.setAttribute("aria-live", "polite");
+  collab.appendChild(summaryEl);
+
+  if (period.invalid) {
+    const invalidEl = createEl("p", "resoconto-note resoconto-note--warn",
+      "Intervallo di date non valido: controlla i campi Dal e Al.");
+    invalidEl.setAttribute("role", "alert");
+    collab.appendChild(invalidEl);
+  } else if (!filtered.length) {
+    collab.appendChild(createEl("p", "resoconto-empty",
+      registry.length ? "Nessuna giornata corrisponde ai filtri." : "Nessuna lezione segnata come svolta."));
+  } else {
+    if (filtered.some(g => g.key === "__senza_istruttore__")) {
+      collab.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
+        "Alcune lezioni svolte non hanno un istruttore: sono raccolte nella voce \"Senza istruttore\"."));
+    }
+    const list = createEl("div", "collab-list");
+    for (const group of filtered) appendCollaboratorCard(list, group);
+    collab.appendChild(list);
+  }
+  el.appendChild(collab);
+
+  if (focusId) {
+    const next = document.getElementById(focusId);
+    if (next) next.focus();
+  }
   renderReport();
 }
 
@@ -1997,120 +3171,80 @@ function printReport() {
   }
 }
 
-/* ===== Render pacchetti ===== */
-function renderPacchetti() {
-  const ul = document.getElementById("pacchetti-list");
-  ul.innerHTML = "";
-  const query = filterValue("filtro-pacchetti");
-  const statoFiltro = filterValue("filtro-pacchetti-stato");
-  const rows = [...data.pacchetti].filter(pk => {
-    const esaurito = pacchettoEsaurito(pk);
-    if (statoFiltro === "attivi" && esaurito) return false;
-    if (statoFiltro === "esauriti" && !esaurito) return false;
-    const c = clienteById(pk.clienteId);
-    return matchesText(query, clienteNome(pk.clienteId), c ? c.cane : "", pk.prezzo, money(pk.prezzo),
-      pk.lezioni, pk.utilizzate, pk.data, isoToDateLabel(pk.data));
-  }).sort((a, b) => {
-    const ka = a.data + String(a.id).padStart(6, "0");
-    const kb = b.data + String(b.id).padStart(6, "0");
-    return ka < kb ? 1 : -1; // data decrescente, poi id decrescente
-  });
-  for (const pk of rows) {
-    const c = clienteById(pk.clienteId);
-    const li = document.createElement("li");
-    li.className = "list-item";
-    li.dataset.id = pk.id;
-    const esaurito = pacchettoEsaurito(pk);
-    const badge = esaurito ? "badge--neutral" : "badge--ok";
-    const badgeTxt = esaurito ? "Esaurito" : "Attivo";
-    const linked = data.pagamenti.find(p => p.pacchettoId === pk.id);
-    const inc = linked ? totaleIncassi(linked.id) : 0;
-    const saldo = linked ? saldoPagamento(linked) : 0;
-    li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge ${badge}">${badgeTxt}</span>
-      </div>
-      <div class="list-item__meta"></div>
-      <div class="list-item__meta"></div>
-      <div class="list-item__actions">
-        ${esaurito ? "" : '<button type="button" class="btn-small" data-action="consuma-lezione">Consuma lezione</button>'}
-        ${linked && saldo > 0 ? '<button type="button" class="btn-small" data-action="incasso-pacchetto" data-pagamento-id="' + linked.id + '">Registra incasso</button>' : ""}
-        <button type="button" class="btn-small" data-action="modifica-pacchetto">Modifica</button>
-        <button type="button" class="btn-small btn-small--danger" data-action="elimina-pacchetto">Elimina</button>
-      </div>`;
-    li.querySelector(".list-item__title").textContent = clienteNome(pk.clienteId);
-    const cane = c ? (c.cane || "—") : "—";
-    const rimaste = lezioniRimanenti(pk);
-    const metas = li.querySelectorAll(".list-item__meta");
-    metas[0].textContent = "Cane: " + cane + "  ·  Lezioni: " + pk.lezioni + "  ·  Rimaste: " + rimaste;
-    metas[1].textContent = "Prezzo: " + money(pk.prezzo)
-      + (linked ? "  ·  Incassato: " + money(inc) + "  ·  Saldo: " + money(saldo) : "  ·  Nessun pagamento collegato")
-      + "  ·  Data: " + isoToDateLabel(pk.data);
-    ul.appendChild(li);
+
+function autoConsumeLezioni() {
+  const now = new Date();
+  let changed = false;
+  for (const pk of data.pacchetti) {
+    let expired = 0;
+    for (const a of data.appuntamenti) {
+      if (a.pacchettoId !== pk.id || !a.data || !a.ora) continue;
+      const when = new Date(a.data + "T" + a.ora + ":00");
+      if (isNaN(when.getTime()) || when > now) continue;
+      expired++;
+      if (!a.fatto) {
+        a.fatto = true;
+        changed = true;
+      }
+    }
+    const target = Math.min(pk.lezioni, Math.max(pk.utilizzate, expired));
+    if (target !== pk.utilizzate) {
+      pk.utilizzate = target;
+      changed = true;
+    }
   }
-  if (!ul.children.length) {
-    const li = document.createElement("li");
-    li.className = "list-empty";
-    li.textContent = data.pacchetti.length ? "Nessun pacchetto corrisponde ai filtri." : "Nessun pacchetto registrato.";
-    ul.appendChild(li);
-  }
+  return changed;
 }
 
 function refresh() {
+  autoConsumeLezioni();
   renderClienti();
   renderArchivio();
-  renderPagamenti();
   renderAppuntamenti();
-  renderPacchetti();
   renderResoconto();
   renderBackupInfo();
 }
 
-/* ===== Select cliente (nei form) ===== */
-function fillClienteSelects() {
-  const selects = document.querySelectorAll("select[name=clienteId]");
-  // Il form dei pagamenti mostra tutti; quello degli appuntamenti usa la scelta corrente del pagamento
-  for (const sel of selects) {
-    const form = sel.closest("form");
-    const keep = form.dataset.keepId;
-    sel.innerHTML = "";
-    for (const c of [...data.clienti].sort((a, b) => a.nome.localeCompare(b.nome, "it"))) {
-      const opt = document.createElement("option");
-      opt.value = String(c.id);
-      opt.textContent = c.nome;
-      sel.appendChild(opt);
-    }
-    if (keep && clienteById(Number(keep))) sel.value = keep;
+
+/* ===== Gestione form ===== */
+const formTriggers = new Map();
+let lastOpenedFormId = null;
+
+function syncFormExpanded(id) {
+  const panel = document.getElementById(id);
+  if (!panel) return;
+  for (const btn of document.querySelectorAll('[aria-controls="' + id + '"]')) {
+    btn.setAttribute("aria-expanded", String(!panel.hidden));
   }
 }
 
-/* ===== Gestione form ===== */
-let lastFormTrigger = null;
-
-function syncFormExpanded(id) {
-  const btn = document.querySelector('[aria-controls="' + id + '"]');
-  const panel = document.getElementById(id);
-  if (btn && panel) btn.setAttribute("aria-expanded", String(!panel.hidden));
+function hideFormPanel(panel) {
+  panel.hidden = true;
+  const form = panel.querySelector("form");
+  if (form) form.reset();
+  syncFormExpanded(panel.id);
 }
 
 function toggleForm(id, show, record) {
   const panel = document.getElementById(id);
   if (!panel) return;
-  panel.hidden = !show;
-  const f = panel.querySelector("form");
   if (!show) {
-    if (f) f.reset();
-    syncFormExpanded(id);
-    if (lastFormTrigger && document.contains(lastFormTrigger)) {
-      lastFormTrigger.focus();
+    const trigger = formTriggers.get(id);
+    formTriggers.delete(id);
+    hideFormPanel(panel);
+    const f = panel.querySelector("form");
+    if (trigger && document.contains(trigger)) {
+      trigger.focus();
     } else if (f) {
-      const fallback = document.getElementById("btn-nuovo-" + f.dataset.form);
+      const fallback = document.getElementById(f.dataset.newBtn || ("btn-nuovo-" + f.dataset.form));
       if (fallback) fallback.focus();
     }
     return;
   }
-  lastFormTrigger = document.activeElement;
+  panel.hidden = false;
+  lastOpenedFormId = id;
+  formTriggers.set(id, document.activeElement);
+  const f = panel.querySelector("form");
   if (!f) return;
   f.reset();
   const heading = panel.querySelector("[data-form-title]");
@@ -2124,17 +3258,25 @@ function toggleForm(id, show, record) {
   const kind = f.dataset.form;
   const title = panel.querySelector("[data-form-title]");
   if (title) {
-    const names = { cliente: "cliente", pagamento: "pagamento", appuntamento: "appuntamento", pacchetto: "pacchetto" };
-    title.textContent = (record ? "Modifica " : "Nuovo ") + names[kind];
+    const names = { cliente: "cliente", pagamento: "pagamento", pacchetto: "pacchetto" };
+    if (kind === "appuntamento") {
+      title.textContent = record ? "Modifica lezione" : "Nuova lezione";
+    } else {
+      title.textContent = kind === "pacchetto" && !record
+        ? "Vendi pacchetto"
+        : (record ? "Modifica " : "Nuovo ") + names[kind];
+    }
   }
   const receiptFields = panel.querySelector("[data-receipt-fields]");
   if (receiptFields) receiptFields.hidden = !!record;
-  f.dataset.keepId = record && record.clienteId ? String(record.clienteId) : "";
-  fillClienteSelects();
+  const scheduleFields = panel.querySelector("[data-schedule-fields]");
+  if (scheduleFields) scheduleFields.hidden = !!record;
   if (record) {
     for (const [key, value] of Object.entries(record)) {
       const el = f.elements.namedItem(key);
-      if (el && typeof value !== "object" && value !== null) el.value = String(value);
+      if (el && typeof value !== "object" && value !== null) {
+        el.value = el.matches("[data-date-input]") ? isoToDateLabel(String(value)) : String(value);
+      }
     }
     if (kind === "appuntamento") {
       const sel = f.elements.namedItem("tipo");
@@ -2150,11 +3292,55 @@ function toggleForm(id, show, record) {
   // Date predefinite per i nuovi inserimenti (l'utente può cambiarle).
   for (const name of ["data", "dataIncasso"]) {
     const el = f.elements.namedItem(name);
-    if (el && !el.value && !record) el.value = todayStr();
+    if (el && !el.value && !record) el.value = todayInput();
+  }
+  if (kind === "appuntamento") {
+    const ora = f.elements.namedItem("ora");
+    if (ora && !ora.value && !record) ora.value = "09:00";
   }
   const first = panel.querySelector("input:not([type=hidden]), select");
   if (first) first.focus();
   syncFormExpanded(id);
+}
+
+function closeFormPanel(form) {
+  const panel = form ? form.closest(".form-panel") : null;
+  if (panel && panel.id) toggleForm(panel.id, false);
+}
+
+function openPacchettoForm(categoria) {
+  const panel = document.getElementById(CARD_FORMS.pacchetto);
+  if (!panel) return;
+  toggleForm(CARD_FORMS.pacchetto, true);
+  const form = panel.querySelector("form");
+  form.elements.namedItem("categoria").value = categoria;
+  syncPacchettoForm(panel);
+  const first = panel.querySelector("input:not([type=hidden]), select");
+  if (first) first.focus();
+}
+
+function openAppuntamentoForm(panelId, values) {
+  const panel = document.getElementById(panelId);
+  if (!panel) return;
+  toggleForm(panelId, true);
+  const form = panel.querySelector("form");
+  form.elements.namedItem("clienteId").value = String(values.clienteId || 0);
+  form.elements.namedItem("pacchettoId").value = String(values.pacchettoId || 0);
+  form.elements.namedItem("istruttore").value = values.istruttore || "";
+  if (values.tipo) {
+    const sel = form.elements.namedItem("tipo");
+    if (sel && sel.tagName === "SELECT") {
+      if (![...sel.options].some(o => o.value === values.tipo)) {
+        const opt = document.createElement("option");
+        opt.value = values.tipo;
+        opt.textContent = values.tipo;
+        sel.appendChild(opt);
+      }
+      sel.value = values.tipo;
+    }
+  }
+  const first = panel.querySelector("input:not([type=hidden]), select");
+  if (first) first.focus();
 }
 
 function handleClick(e) {
@@ -2166,10 +3352,30 @@ function handleClick(e) {
     if (f) { f.hidden = true; f.reset(); }
     return;
   }
+  const datePickerBtn = e.target.closest("[data-date-picker]");
+  if (datePickerBtn) { openDatePicker(datePickerBtn); return; }
+  const deletePacchetto = e.target.closest("[data-delete-pacchetto]");
+  if (deletePacchetto) {
+    const panel = deletePacchetto.closest(".form-panel");
+    const f = panel ? panel.querySelector("form") : null;
+    const idField = f ? f.elements.namedItem("id") : null;
+    const pkId = Number(idField ? idField.value : 0);
+    if (pkId) deletePacchettoById(pkId);
+    return;
+  }
+  const addAcconto = e.target.closest("[data-add-acconto]");
+  if (addAcconto) { addInitialReceiptRow(addAcconto.closest(".form-panel")); return; }
+  const removeAcconto = e.target.closest("[data-remove-acconto]");
+  if (removeAcconto) {
+    const panel = removeAcconto.closest(".form-panel");
+    const row = removeAcconto.closest("[data-initial-receipt]");
+    if (row) row.remove();
+    refreshPacchettoForm(panel);
+    return;
+  }
   if (e.target.id === "btn-nuovo-cliente") { toggleForm("form-cliente", true); return; }
-  if (e.target.id === "btn-nuovo-pagamento") { toggleForm("form-pagamento", true); return; }
-  if (e.target.id === "btn-nuovo-appuntamento") { toggleForm("form-appuntamento", true); return; }
-  if (e.target.id === "btn-nuovo-pacchetto") { toggleForm("form-pacchetto", true); return; }
+  if (e.target.id === "cliente-btn-nuovo-pacchetto") { openPacchettoForm("pacchetto"); return; }
+  if (e.target.id === "cliente-btn-nuova-singola") { openPacchettoForm("singola"); return; }
   const action = e.target.closest("[data-action]");
   if (action) {
     const holder = action.closest("[data-id]");
@@ -2199,7 +3405,7 @@ function handleClick(e) {
         form.hidden = !form.hidden;
         if (!form.hidden) {
           const date = form.elements.namedItem("data");
-          if (date && !date.value) date.value = todayStr();
+          if (date && !date.value) date.value = todayInput();
           const amount = form.elements.namedItem("importo");
           if (amount && !amount.value) {
             const p = data.pagamenti.find(x => x.id === id);
@@ -2243,7 +3449,7 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "modifica-pagamento") {
       const p = data.pagamenti.find(x => x.id === id);
-      if (p) toggleForm("form-pagamento", true, p);
+      if (p) toggleForm(CARD_FORMS.pagamento, true, p);
     } else if (act === "elimina-pagamento") {
       const p = data.pagamenti.find(x => x.id === id);
       if (!p) return;
@@ -2257,30 +3463,32 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "modifica-pacchetto") {
       const pk = data.pacchetti.find(x => x.id === id);
-      if (pk) toggleForm("form-pacchetto", true, pk);
+      if (pk) {
+        toggleForm(CARD_FORMS.pacchetto, true, pk);
+        syncPacchettoForm(document.getElementById(CARD_FORMS.pacchetto));
+      }
+    } else if (act === "nuova-lezione") {
+      const pk = data.pacchetti.find(x => x.id === id);
+      if (!pk) return;
+      const count = data.appuntamenti.filter(a => a.pacchettoId === pk.id).length;
+      if (count >= pk.lezioni) {
+        setStatus("Hai già programmato tutte le lezioni di questo pacchetto.", true);
+        return;
+      }
+      openAppuntamentoForm(CARD_FORMS.appuntamento, {
+        clienteId: pk.clienteId,
+        pacchettoId: pk.id,
+        istruttore: pk.istruttore,
+        tipo: pk.categoria === "singola" ? (pk.tipo || "Addestramento") : "Addestramento",
+      });
     } else if (act === "elimina-pacchetto") {
-      const plan = pacchettoDeletionPlan(id);
-      if (!plan) return;
-      const pk = plan.pacchetto;
-      const contratti = plan.pagamenti.reduce((s, p) => s + p.importo, 0);
-      const items = [
-        { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati", extra: plan.pagamenti.length ? money(contratti) : "" },
-        { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
-      ];
-      const msg = confirmDeletionMessage(
-        "Eliminare il pacchetto di " + clienteNome(pk.clienteId) + " (" + pk.lezioni + " lezioni)?",
-        items, plan.warnings, ""
-      );
-      if (!confirm(msg)) return;
-      rememberUndo("Pacchetto eliminato.");
-      deletePacchettoCascade(plan);
-      if (!commit("Pacchetto eliminato con i dati collegati.")) { restoreUndoState(); return; }
-      offerUndo();
-    } else if (act === "incasso-pacchetto") {
-      const pid = Number(action.dataset.pagamentoId);
-      goTo("pagamenti");
-      const btn = document.querySelector("#pagamenti-list li[data-id='" + pid + "'] [data-action=registra-incasso]");
-      if (btn) btn.click();
+      deletePacchettoById(id);
+    } else if (act === "toggle-pagamento") {
+      const group = action.closest(".lezione-group");
+      const panel = group ? group.querySelector(".lezione-block--payments") : null;
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      action.setAttribute("aria-expanded", String(!panel.hidden));
     } else if (act === "assegna-orfano") {
       const tipo = action.dataset.tipo;
       const oid = Number(action.dataset.id);
@@ -2324,6 +3532,7 @@ function handleClick(e) {
         const items = [
           { n: plan.pagamenti.length, singular: "pagamento collegato", plural: "pagamenti collegati" },
           { n: plan.incassi.length, singular: "incasso", plural: "incassi", extra: plan.incassi.length ? money(plan.incassato) : "" },
+          { n: plan.appuntamentiDaEliminare.length, singular: "appuntamento non svolto", plural: "appuntamenti non svolti" },
         ];
         if (!confirm(confirmDeletionMessage("Eliminare definitivamente questo pacchetto senza cliente?", items, plan.warnings, ""))) return;
       } else if (!confirm("Eliminare definitivamente questo dato senza cliente?")) {
@@ -2346,6 +3555,17 @@ function handleClick(e) {
     } else if (act === "scheda-cliente") {
       selectedClienteId = id;
       detailTriggerId = id;
+      renderClienti();
+      const box = document.getElementById("cliente-dettaglio");
+      if (box && !box.hidden) {
+        box.focus({ preventScroll: true });
+        box.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } else if (act === "vai-cliente") {
+      const cid = Number(action.dataset.clienteId);
+      selectedClienteId = cid;
+      detailTriggerId = cid;
+      goTo("clienti");
       renderClienti();
       const box = document.getElementById("cliente-dettaglio");
       if (box && !box.hidden) {
@@ -2381,28 +3601,13 @@ function handleClick(e) {
       c.stato = "Attivo";
       selectedArchivioId = 0;
       archivioTriggerId = 0;
-      if (!commit("Cliente riattivato: " + c.nome + ". È tornato in Clienti.")) { restoreUndoState(); return; }
+      if (!commit("Cliente riattivato: " + c.nome + ". È tornato tra i clienti attivi.")) { restoreUndoState(); return; }
       offerUndo();
     } else if (act === "modifica-cliente") {
       const c = clienteById(id);
       if (c) {
         if (action.closest("#archivio-list")) goTo("clienti");
         toggleForm("form-cliente", true, c);
-      }
-    } else if (act === "rinomina-cliente") {
-      const c = clienteById(id);
-      if (c) {
-        const n = prompt("Nuovo nome del cliente:", c.nome);
-        if (n === null) return;
-        const nome = n.trim();
-        if (!nome) { setStatus("Nome non valido.", true); return; }
-        const d = prompt("Cane (razza):", c.cane || "");
-        if (d === null) return;
-        rememberUndo("Cliente rinominato.");
-        c.nome = nome;
-        c.cane = d.trim();
-        if (!commit("Cliente rinominato.")) { restoreUndoState(); return; }
-        offerUndo();
       }
     } else if (act === "elimina-cliente") {
       const plan = clienteDeletionPlan(id);
@@ -2430,7 +3635,17 @@ function handleClick(e) {
       offerUndo();
     } else if (act === "modifica-appuntamento") {
       const a = data.appuntamenti.find(x => x.id === id);
-      if (a) toggleForm("form-appuntamento", true, a);
+      if (!a) return;
+      if (action.closest("#view-appuntamenti")) {
+        toggleForm("form-appuntamento", true, a);
+        const info = document.querySelector("[data-appuntamento-info]");
+        if (info) {
+          const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+          info.textContent = clienteNome(a.clienteId) + (pk ? " · " + lezioneLabel(pk) : "");
+        }
+      } else {
+        toggleForm(CARD_FORMS.appuntamento, true, a);
+      }
     } else if (act === "elimina-appuntamento") {
       const a = data.appuntamenti.find(x => x.id === id);
       if (!a) return;
@@ -2440,6 +3655,15 @@ function handleClick(e) {
       if (!commit("Appuntamento eliminato.")) { restoreUndoState(); return; }
       offerUndo();
     }
+    return;
+  }
+  if (e.target.id === "resoconto-coll-reset") {
+    collabFilters.collaborator = "";
+    collabFilters.month = "";
+    collabFilters.year = "";
+    collabFilters.from = "";
+    collabFilters.to = "";
+    renderResoconto();
     return;
   }
   if (e.target.id === "btn-csv-incassi") { exportCsvIncassi(); return; }
@@ -2509,14 +3733,14 @@ document.addEventListener("submit", (e) => {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
     const importo = Math.round(Number(fd.get("importo")) * 100) / 100;
-    const data_ = (fd.get("data") || "").toString();
+    const data_ = parseDateInput(fd.get("data"));
     const descrizione = (fd.get("descrizione") || "").toString().trim();
     const acconto = Math.round((Number(fd.get("acconto")) || 0) * 100) / 100;
-    let dataIncasso = (fd.get("dataIncasso") || "").toString();
-    if (!clienteId || !data_ || !(importo > 0)) { setStatus("Completa cliente, data e importo.", true); return; }
+    let dataIncasso = parseDateInput(fd.get("dataIncasso"));
+    if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
+    if (!data_ || !(importo > 0)) { setStatus("Completa data e importo.", true); return; }
     if (!isIsoDate(data_)) { setStatus("La data del contratto non è valida.", true); return; }
     if (acconto < 0) { setStatus("L'incasso iniziale non può essere negativo.", true); return; }
-    if (!clienteById(clienteId)) { setStatus("Seleziona un cliente valido.", true); return; }
 
     if (id) {
       const p = data.pagamenti.find(x => x.id === id);
@@ -2540,7 +3764,7 @@ document.addEventListener("submit", (e) => {
       }
       p.stato = statoPagamento(p);
       if (!commit("Pagamento aggiornato: " + money(importo))) { restoreUndoState(); return; }
-      toggleForm("form-pagamento", false);
+      closeFormPanel(form);
       offerUndo();
       return;
     }
@@ -2564,23 +3788,23 @@ document.addEventListener("submit", (e) => {
       data.incassi = data.incassi.filter(i => i.pagamentoId !== row.id);
       return;
     }
-    toggleForm("form-pagamento", false);
+    closeFormPanel(form);
   }
 
   if (kind === "pacchetto") {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
-    const lezioni = Number(fd.get("lezioni"));
+    const categoria = fd.get("categoria") === "singola" ? "singola" : "pacchetto";
+    const tipo = (fd.get("tipo") || "").toString().trim().slice(0, 60);
+    let lezioni = Number(fd.get("lezioni"));
+    if (categoria === "singola") lezioni = 1;
     const prezzo = Math.round(Number(fd.get("prezzo")) * 100) / 100;
-    const accontoRaw = Number(fd.get("acconto")) || 0;
-    const acconto = Math.round(accontoRaw * 100) / 100;
-    const data_ = (fd.get("data") || "").toString();
-    let dataIncasso = (fd.get("dataIncasso") || "").toString();
-    if (!clienteId || !clienteById(clienteId)) { setStatus("Seleziona un cliente valido.", true); return; }
+    const data_ = todayStr();
+    const panel = form.closest(".form-panel");
+    if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!Number.isInteger(lezioni) || lezioni < 1) { setStatus("Il numero di lezioni deve essere almeno 1.", true); return; }
-    if (!(prezzo > 0)) { setStatus("Il prezzo deve essere maggiore di 0.", true); return; }
-    if (acconto < 0) { setStatus("L'acconto non può essere negativo.", true); return; }
-    if (!isIsoDate(data_)) { setStatus("Inserisci una data di acquisto valida.", true); return; }
+    if (!(prezzo >= 0)) { setStatus("Il prezzo non può essere negativo.", true); return; }
+    if (categoria === "pacchetto" && !(prezzo > 0)) { setStatus("Il prezzo deve essere maggiore di 0.", true); return; }
 
     if (id) {
       const pk = data.pacchetti.find(x => x.id === id);
@@ -2597,14 +3821,18 @@ document.addEventListener("submit", (e) => {
       }
       rememberUndo("Pacchetto modificato.");
       pk.clienteId = clienteId;
-      pk.lezioni = lezioni;
+      pk.tipo = tipo;
+      pk.lezioni = categoria === "singola" ? 1 : lezioni;
       pk.prezzo = prezzo;
-      pk.data = data_;
-      if (linked) {
+      if (prezzo === 0) {
+        if (linked && incassato === 0) {
+          data.pagamenti = data.pagamenti.filter(p => p.id !== linked.id);
+          data.incassi = data.incassi.filter(i => i.pagamentoId !== linked.id);
+        }
+      } else if (linked) {
         linked.clienteId = clienteId;
         linked.importo = prezzo;
-        linked.data = data_;
-        linked.descrizione = "Pacchetto " + lezioni + " lezioni";
+        linked.descrizione = lezioneDescrizione(pk);
         linked.stato = statoPagamento(linked);
       } else {
         // Dato legacy o incompleto: ricrea il pagamento collegato mancante.
@@ -2612,92 +3840,182 @@ document.addEventListener("submit", (e) => {
           id: nextId(data.pagamenti),
           clienteId,
           importo: prezzo,
-          data: data_,
+          data: pk.data || data_,
           stato: "Da pagare",
-          descrizione: "Pacchetto " + lezioni + " lezioni",
+          descrizione: lezioneDescrizione(pk),
           pacchettoId: pk.id,
           incassoDaVerificare: false,
         });
       }
-      if (!commit("Pacchetto aggiornato: " + lezioni + " lezioni per " + clienteNome(clienteId))) {
+      if (!commit((categoria === "singola" ? "Lezione aggiornata: " : "Pacchetto aggiornato: ") +
+          lezioneLabel(pk) + " per " + clienteNome(clienteId))) {
         restoreUndoState();
         return;
       }
-      toggleForm("form-pacchetto", false);
+      closeFormPanel(form);
       offerUndo();
       return;
     }
 
-    if (acconto > prezzo) { setStatus("L'acconto non può superare il prezzo totale.", true); return; }
-    if (acconto > 0 && !dataIncasso) dataIncasso = data_;
-    if (acconto > 0 && !isIsoDate(dataIncasso)) { setStatus("La data dell'acconto non è valida.", true); return; }
-    // Evita raddoppio: stesso cliente, stessa data e stesso numero di lezioni.
-    const dup = data.pacchetti.find(p => p.clienteId === clienteId && p.data === data_ && p.lezioni === lezioni);
-    if (dup) { setStatus("Un pacchetto con le stesse lezioni e data è già registrato per questo cliente.", true); return; }
-    const nuovoPacchetto = { id: nextId(data.pacchetti), clienteId, lezioni, utilizzate: 0, prezzo, data: data_ };
-    const nuovoPagamento = {
+    const receipts = readInitialReceipts(panel);
+    let acconti = 0;
+    for (const r of receipts) {
+      if (!(r.importo > 0)) { setStatus("L'importo di ogni acconto deve essere maggiore di 0.", true); return; }
+      if (!isIsoDate(r.data)) { setStatus("Inserisci una data valida per ogni acconto.", true); return; }
+      acconti += r.importo;
+    }
+    acconti = Math.round(acconti * 100) / 100;
+    if (acconti > prezzo + 0.005) { setStatus("Gli acconti non possono superare il prezzo totale.", true); return; }
+
+    const scheduleRows = readScheduleRows(panel).filter(r => r.data || r.ora);
+    if (scheduleRows.length > lezioni) {
+      setStatus("Hai inserito più date del numero di lezioni.", true);
+      return;
+    }
+    const seen = new Set();
+    for (let i = 0; i < scheduleRows.length; i++) {
+      const row = scheduleRows[i];
+      if (!isIsoDate(row.data) || !isTime(row.ora)) {
+        setStatus("Completa data e ora della lezione " + (i + 1) + ".", true);
+        return;
+      }
+      const key = row.data + " " + row.ora;
+      if (seen.has(key)) {
+        setStatus("Ci sono due lezioni alla stessa data e ora.", true);
+        return;
+      }
+      seen.add(key);
+      const conflict = data.appuntamenti.find(a => a.data === row.data && a.ora === row.ora);
+      if (conflict) {
+        setStatus("Data occupata: " + isoToDateLabel(row.data) + " alle " + row.ora +
+          " (" + clienteNome(conflict.clienteId) + "). Scegli un'altra data o ora.", true);
+        return;
+      }
+    }
+
+    const tipoKey = v => {
+      const t = (v || "").trim();
+      return t.toLowerCase() === "pacchetto" ? "" : t.toLowerCase();
+    };
+    const dup = data.pacchetti.find(p => p.clienteId === clienteId && p.data === data_ &&
+      p.categoria === categoria && p.lezioni === lezioni && tipoKey(p.tipo) === tipoKey(tipo));
+    if (dup) { setStatus("Un elemento con le stesse lezioni, data e tipo è già registrato per questo cliente.", true); return; }
+
+    const defaultInstructor = scheduleRows.find(r => r.istruttore)?.istruttore || "";
+    const nuovoPacchetto = {
+      id: nextId(data.pacchetti), clienteId, categoria, tipo, istruttore: defaultInstructor,
+      lezioni: categoria === "singola" ? 1 : lezioni, utilizzate: 0, prezzo, data: data_,
+    };
+    const nuovoPagamento = prezzo > 0 ? {
       id: nextId(data.pagamenti),
       clienteId,
       importo: prezzo,
       data: data_,
       stato: "Da pagare",
-      descrizione: "Pacchetto " + lezioni + " lezioni",
+      descrizione: lezioneDescrizione(nuovoPacchetto),
       pacchettoId: nuovoPacchetto.id,
       incassoDaVerificare: false,
-    };
+    } : null;
+    rememberUndo(categoria === "singola" ? "Lezione venduta." : "Pacchetto venduto.");
     data.pacchetti.push(nuovoPacchetto);
-    data.pagamenti.push(nuovoPagamento);
-    if (acconto > 0) addIncasso(nuovoPagamento.id, acconto, dataIncasso, "Acconto pacchetto");
-    nuovoPagamento.stato = statoPagamento(nuovoPagamento);
-    const saldoMsg = acconto > 0 ? " · saldo " + money(prezzo - acconto) : "";
-    if (!commit("Pacchetto salvato: " + lezioni + " lezioni per " + clienteNome(clienteId) + saldoMsg)) {
-      data.pacchetti = data.pacchetti.filter(x => x.id !== nuovoPacchetto.id);
-      data.pagamenti = data.pagamenti.filter(x => x.id !== nuovoPagamento.id);
-      data.incassi = data.incassi.filter(i => i.pagamentoId !== nuovoPagamento.id);
+    if (nuovoPagamento) data.pagamenti.push(nuovoPagamento);
+    if (nuovoPagamento) {
+      receipts.forEach((r, i) => {
+        addIncasso(nuovoPagamento.id, r.importo, r.data, r.nota || ("Acconto " + (i + 1)));
+      });
+      nuovoPagamento.stato = statoPagamento(nuovoPagamento);
+    }
+    const newAppointments = [];
+    if (scheduleRows.length) {
+      let nextAppId = nextId(data.appuntamenti);
+      const defaultTipo = categoria === "singola" ? (tipo || "Addestramento") : "Addestramento";
+      for (const row of scheduleRows) {
+        const app = {
+          id: nextAppId++,
+          clienteId,
+          data: row.data,
+          ora: row.ora,
+          tipo: defaultTipo,
+          istruttore: row.istruttore || defaultInstructor,
+          pacchettoId: nuovoPacchetto.id,
+          fatto: false,
+        };
+        newAppointments.push(app);
+        data.appuntamenti.push(app);
+      }
+    }
+    const saldo = Math.max(0, Math.round((prezzo - acconti) * 100) / 100);
+    const saldoMsg = prezzo > 0 ? " · saldo " + money(saldo) : "";
+    const appMsg = newAppointments.length ? " · " + newAppointments.length + " appuntamenti creati" : "";
+    if (!commit(lezioneLabel(nuovoPacchetto) + " salvato: " +
+        (categoria === "singola" ? "" : lezioni + " lezioni, ") +
+        "acconti " + money(acconti) + " per " + clienteNome(clienteId) + saldoMsg + appMsg)) {
+      restoreUndoState();
       return;
     }
-    toggleForm("form-pacchetto", false);
+    closeFormPanel(form);
+    offerUndo();
   }
 
   if (kind === "appuntamento") {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
-    const data_ = (fd.get("data") || "").toString();
+    const pacchettoId = Number(fd.get("pacchettoId") || 0);
+    const data_ = parseDateInput(fd.get("data"));
     const ora = (fd.get("ora") || "").toString();
     const tipo = (fd.get("tipo") || "").toString();
-    if (!clienteId || !data_ || !ora || !tipo) { setStatus("Completa tutti i campi dell'appuntamento.", true); return; }
-    if (!clienteById(clienteId)) { setStatus("Seleziona un cliente valido.", true); return; }
+    const istruttore = (fd.get("istruttore") || "").toString().trim().slice(0, 60);
+    if (!clienteId || !data_ || !ora || !tipo) { setStatus("Completa tutti i campi della lezione.", true); return; }
+    if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!isIsoDate(data_) || !isTime(ora)) { setStatus("Data o ora non valide.", true); return; }
+    let linked = null;
+    if (pacchettoId) {
+      linked = data.pacchetti.find(pk => pk.id === pacchettoId);
+      if (!linked || linked.clienteId !== clienteId) {
+        setStatus("Pacchetto o lezione non valido per questo cliente.", true);
+        return;
+      }
+    }
+    if (!id && linked) {
+      const count = data.appuntamenti.filter(a => a.pacchettoId === linked.id).length;
+      if (count >= linked.lezioni) {
+        setStatus("Hai già programmato tutte le lezioni di questo pacchetto.", true);
+        return;
+      }
+    }
     const dup = data.appuntamenti.find(a => a.id !== id && a.clienteId === clienteId && a.data === data_ && a.ora === ora);
-    if (dup) { setStatus("Questo cliente ha già un appuntamento in questa data e ora.", true); return; }
+    if (dup) { setStatus("Questo cliente ha già una lezione in questa data e ora.", true); return; }
     const conflict = data.appuntamenti.find(a => a.id !== id && a.data === data_ && a.ora === ora);
-    if (conflict) { setStatus("Hai già un appuntamento in questa data e ora con " + clienteNome(conflict.clienteId) + ".", true); return; }
+    if (conflict) { setStatus("Hai già una lezione in questa data e ora con " + clienteNome(conflict.clienteId) + ".", true); return; }
     if (id) {
       const a = data.appuntamenti.find(x => x.id === id);
-      if (!a) { setStatus("Appuntamento non trovato.", true); return; }
-      rememberUndo("Appuntamento modificato.");
-      Object.assign(a, { clienteId, data: data_, ora, tipo });
-      if (!commit("Appuntamento aggiornato per " + clienteNome(clienteId))) {
+      if (!a) { setStatus("Lezione non trovata.", true); return; }
+      rememberUndo("Lezione modificata.");
+      Object.assign(a, { clienteId, pacchettoId, data: data_, ora, tipo, istruttore });
+      if (!commit("Lezione aggiornata per " + clienteNome(clienteId))) {
         restoreUndoState();
         return;
       }
-      toggleForm("form-appuntamento", false);
+      closeFormPanel(form);
       offerUndo();
       return;
     }
-    const row = { id: nextId(data.appuntamenti), clienteId, data: data_, ora, tipo, fatto: false };
+    const row = {
+      id: nextId(data.appuntamenti), clienteId, pacchettoId,
+      data: data_, ora, tipo, istruttore, fatto: false,
+    };
     data.appuntamenti.push(row);
-    if (!commit("Appuntamento salvato per " + clienteNome(clienteId))) {
+    if (!commit("Lezione salvata per " + clienteNome(clienteId))) {
       data.appuntamenti = data.appuntamenti.filter(a => a.id !== row.id);
       return;
     }
-    toggleForm("form-appuntamento", false);
+    closeFormPanel(form);
   }
 
   if (kind === "incasso") {
     const pagamentoId = Number(fd.get("pagamentoId"));
     const importo = Math.round(Number(fd.get("importo")) * 100) / 100;
-    const data_ = (fd.get("data") || "").toString();
+    const data_ = parseDateInput(fd.get("data"));
     const nota = (fd.get("nota") || "").toString().trim();
     const p = data.pagamenti.find(x => x.id === pagamentoId);
     if (!p) { setStatus("Pagamento non trovato.", true); return; }
@@ -2747,7 +4065,7 @@ function renderBackupInfo() {
 function exportData() {
   try {
     const payload = JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 4,
       exportedAt: new Date().toISOString(),
       clienti: data.clienti,
       pagamenti: data.pagamenti,
@@ -2838,8 +4156,26 @@ refresh();
 // Solo replaceState: nessuna push in avvio, anche se l'hash iniziale è già valido.
 (function startup() {
   let initial = hashView();
+  if (LEGACY_VIEWS[initial]) initial = LEGACY_VIEWS[initial];
   if (!KNOWN_VIEWS.includes(initial)) initial = "home";
   showView(initial);
   history.replaceState({ view: initial }, "", "#" + initial);
 })();
 initBanner();
+
+let lastCalendarDay = todayStr();
+
+function tickCalendar() {
+  const changed = autoConsumeLezioni();
+  const dayChanged = todayStr() !== lastCalendarDay;
+  if (changed && !saveData()) return;
+  if (changed || dayChanged) {
+    lastCalendarDay = todayStr();
+    refresh();
+  }
+}
+
+setInterval(tickCalendar, 60000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) tickCalendar();
+});

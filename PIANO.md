@@ -1042,3 +1042,550 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 
 - Fase 17 chiusa e pubblicata. Tag `v1.0.0` su `68cdc1e`. Non avviare altre fasi senza approvazione.
 
+---
+
+# Fasi 18–23 — Scheda cliente unificata (completata e verificata localmente, non pubblicata)
+
+## Richiesta approvata
+
+- Home con esattamente tre pulsanti: **Scheda cliente**, **Resoconto**, **Archivio**.
+- Gestire pagamenti, appuntamenti e pacchetti dentro ogni scheda cliente: creazione, modifica, eliminazione e azioni specifiche.
+- Rimuovere definitivamente le viste autonome Pagamenti, Appuntamenti e Pacchetti.
+- Mantenere il modello dati `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`, la persistenza `localStorage` e le funzioni esistenti.
+- Non introdurre dipendenze, backend o funzionalità extra.
+- Non pubblicare su GitHub: nessun commit, push, merge, PR o tag in questa fase.
+
+## Decisioni
+
+- Pagamenti, appuntamenti e pacchetti sono sezioni impilate nella scheda cliente, non tab separate.
+- Il cliente nei form integrati è fisso e nascosto: niente selettore cliente.
+- ID dedicati: `form-cliente-pagamento`, `form-cliente-appuntamento`, `form-cliente-pacchetto`; liste `cliente-pagamenti-list`, `cliente-appuntamenti-list`, `cliente-pacchetti-list`; pulsanti `cliente-btn-nuovo-*`.
+- L'Archivio resta in sola consultazione e riattivazione, con una scheda dedicata in sola lettura.
+- Gli hash legacy `#pagamenti`, `#appuntamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
+- Le suite Playwright sono state aggiornate ai nuovi selettori e flussi, come previsto dalla fase approvata.
+
+## Implementazione effettiva
+
+- **Home**: `index.html` mostra tre sole card (Scheda cliente, Resoconto, Archivio); la vista Clienti è intitolata "Scheda cliente". Le viste `view-pagamenti`, `view-appuntamenti` e `view-pacchetti` sono state rimosse.
+- **Navigazione**: `KNOWN_VIEWS` contiene `home`, `clienti`, `archivio`, `resoconto`; `LEGACY_VIEWS` reindirizza i vecchi hash; lo startup applica lo stesso redirect e gli alias usano `replaceState` per non bloccare il tasto Indietro.
+- **Scheda cliente**: `renderClienteGestione` crea le tre sezioni con form dedicati e liste; `renderCardPagamenti`, `renderCardAppuntamenti` e `renderCardPacchetti` mostrano solo i dati del cliente aperto. I form usano un campo `clienteId` nascosto.
+- **Azioni nella scheda**: creazione, modifica ed eliminazione di pagamenti, appuntamenti e pacchetti; consumo lezione; registrazione e rimozione incassi; saldo pagamento; incasso pacchetto che apre il form incasso nella sezione Pagamenti della stessa scheda.
+- **Archivio**: `renderClienteStorico` mostra pagamenti, appuntamenti e pacchetti in sola lettura; restano disponibili riattivazione ed eliminazione dalla lista.
+- **Rimozioni**: eliminati `renderPagamenti`, `renderAppuntamenti`, `renderPacchetti` e `fillClienteSelects`; `refresh()` non li richiama più. Rimossi i filtri globali delle tre viste.
+- **Form**: `toggleForm` usa `data-new-btn` per riportare il focus al pulsante corretto; `closeFormPanel` chiude il pannello del form dopo un salvataggio riuscito. Più form possono restare aperti; `Escape` chiude quello che contiene il focus e ogni form riporta il focus al proprio pulsante di apertura. I filtri aggiornano solo la lista; se la scheda viene ridisegnata, i valori dei form aperti vengono conservati. Titoli dei form portati a `h5` per la gerarchia delle sezioni.
+- **Stili**: aggiunte le regole `.card-section`, intestazioni, liste compatte e titoli nel pannello dettaglio, mantenendo i token del restyling; home a 3 colonne già da 48rem, con etichette ridimensionate nella fascia intermedia, per evitare una card orfana e overflow.
+- **Dati**: modello e chiavi `localStorage` invariati; export, import, snapshot e undo restano compatibili.
+
+## Test effettivi
+
+- Suite completa: **509 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **99/99**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **49/49**, Fase 14 **49/49**, Fase 16 **50/50**.
+- Modifiche alle suite: aggiunto `open_cliente` in `common.py`; aggiornati `test_regressione.py`, `test_fase7.py`, `test_fase8.py`, `test_fase9.py`, `test_fase10.py`, `test_fase11.py`, `test_fase13.py` e `test_fase16.py`; riscritta `test_fase12.py` per le sezioni della scheda e i filtri Clienti/Archivio; resi dinamici i nomi file CSV in `test_fase14.py` (dipendevano dal mese corrente).
+- Rispetto alla fase precedente: `test_regressione.py` 93 → 99, `test_fase12.py` 33 → 32, `test_fase13.py` 51 → 49. Sono stati rimossi i controlli delle viste autonome e aggiunti test per hash legacy, conservazione dei form aperti e incasso da pacchetto.
+- Smoke test locale: home a 3 pulsanti, 4 viste, redirect hash legacy, 3 sezioni nella scheda, creazione/modifica pagamento, appuntamento e pacchetto, consumo lezione, incasso da pacchetto, archivio read-only, persistenza dopo reload, `Escape`/focus, nessun overflow a 375 px e nessun errore console/pageerror.
+- `git diff --check`: exit code 0.
+
+## Problemi aperti / note
+
+- Per creare pagamenti, appuntamenti o pacchetti su un cliente archiviato bisogna prima riattivarlo: l'Archivio è in sola consultazione.
+- I form integrati usano il cliente della scheda: non è più possibile spostare un record su un altro cliente; va eliminato e ricreato nella scheda corretta.
+- Le modifiche sono nel working tree locale, non committate: `main` è ancora al commit `04652d7`.
+- Il sito pubblico non è stato aggiornato: le viste autonome restano online finché non verrà pubblicata una nuova versione.
+- I filtri globali di pagamenti, appuntamenti e pacchetti non esistono più: la ricerca resta su Clienti e Archivio.
+- Il totale dei test è passato da 506 a 509: rimossi i controlli delle viste eliminate, aggiunte coperture per hash legacy, cronologia, conservazione dei form aperti e incasso da pacchetto.
+
+## Prossimo passo / Fermo
+
+- Fase completata e verificata localmente. Non eseguire commit, push, merge o pubblicazione senza richiesta e approvazione esplicita.
+
+---
+
+# Fase 24 — Modello dati per la vendita pacchetto (completata e verificata localmente)
+
+## Richiesta
+
+- Preparare il modello dati per il flusso unico “Vendi pacchetto”: tipo di pacchetto, collegamento degli appuntamenti al pacchetto e pratica di pagamento.
+- Mantenere compatibilità con i dati esistenti e con `localStorage` `cinofilo-data-v1`.
+
+## Decisioni
+
+- `pacchetto.tipo`: stringa libera, massimo 60 caratteri, default `""`.
+- `appuntamento.pacchettoId`: intero positivo, default `0` (appuntamento manuale).
+- La pratica di pagamento resta il pagamento collegato tramite `pagamento.pacchettoId`; nessuna nuova entità.
+- Export portato a `schemaVersion: 3`; import di file precedenti con valori predefiniti sicuri.
+
+## Implementazione effettiva
+
+- **Normalizzazione**: `normalizePacchetto` aggiunge `tipo`; `normalizeAppuntamento` aggiunge `pacchettoId`. I dati mancanti o non validi ricevono `""` e `0`.
+- **Creazione**: i nuovi pacchetti nascono con `tipo: ""`; i nuovi appuntamenti manuali con `pacchettoId: 0`. La modifica di un pacchetto o appuntamento preserva i campi esistenti.
+- **Export/import**: `schemaVersion` portato a 3; i nuovi campi sono esportati e reimportati. I backup precedenti restano leggibili.
+- **Nessuna modifica UI**: il form unico e il calendario automatico arrivano nelle fasi successive.
+
+## Test effettivi
+
+- Suite completa: **511 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **101/101**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **49/49**, Fase 14 **49/49**, Fase 16 **50/50**.
+- Nuovi controlli: `pacchettoId` default sugli appuntamenti (regressione 1f, Fase 8 8.7e), `tipo` default sui pacchetti (regressione 9a, 16i), chiavi export aggiornate e `schemaVersion 3` (regressione 14a/14b).
+
+## Problemi aperti / note
+
+- Il tipo pacchetto non è ancora modificabile dall’interfaccia: verrà esposto nella Fase 25.
+- Gli appuntamenti non vengono ancora generati automaticamente: Fase 26.
+- Le modifiche sono sul branch locale `feat/fase-24-29-vendita-pacchetto`; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 24 completata. Attendere approvazione prima di avviare la Fase 25 (form unico “Vendi pacchetto” e pratica di pagamento).
+
+---
+
+# Fasi 25–29 — Vendita pacchetto unificata (completata e verificata localmente)
+
+## Richiesta
+
+- Integrare in un unico flusso la vendita del pacchetto, la programmazione degli appuntamenti e la pratica di pagamento.
+- Registrare il tipo di pacchetto, creare automaticamente gli eventi e generare un pagamento collegato con acconto e saldo.
+- Non pubblicare: solo verifica locale.
+
+## Decisioni
+
+- Un unico form “Vendi pacchetto” nella scheda cliente, con tre blocchi: Pacchetto, Pratica di pagamento, Calendario.
+- Tipo di pacchetto libero, con suggerimenti dai tipi già usati; se vuoto viene mostrato “Pacchetto”.
+- La pratica è il pagamento collegato tramite `pacchettoId`; nessuna nuova entità.
+- Programmazione automatica attiva di default ma disattivabile.
+- Un appuntamento per ogni lezione, cadenza di 7 o 14 giorni, data/ora e tipo lezione scelti.
+- Anteprima live delle date e dei conflitti; la vendita è bloccata se una data è occupata.
+- La modifica del pacchetto non rigenera il calendario.
+- L’eliminazione del pacchetto rimuove gli appuntamenti non svolti; quelli svolti restano nello storico senza collegamento.
+- Il consumo delle lezioni resta manuale.
+
+## Implementazione effettiva
+
+- **Form unico**: `pacchettoFormHtml` ora contiene i tre blocchi, il campo `tipo`, l’anteprima del calendario e il riepilogo acconto/saldo.
+- **Anteprima**: `renderPacchettoPreview`, `scheduleDates` e `scheduleConflicts` calcolano le date, mostrano “Libero/Occupato” e aggiornano il riepilogo della pratica. I campi del calendario si nascondono se la programmazione è disattivata.
+- **Creazione atomica**: il submit crea pacchetto, pagamento, incasso dell’acconto e appuntamenti in un’unica operazione con `rememberUndo`; se `commit` fallisce, `restoreUndoState` ripristina lo stato precedente. Dopo il salvataggio il banner permette di annullare tutto.
+- **Vincoli**: tipo massimo 60 caratteri; lezioni ≥ 1; prezzo > 0; acconto ≥ 0 e non superiore al prezzo; data vendita e prima lezione valide; ora valida; cadenza 7/14; conflitto globale su data e ora.
+- **Pratica**: descrizione `Pacchetto <tipo> · N lezioni`; l’acconto genera un incasso con nota `Acconto Pacchetto <tipo>`; lo stato è derivato (`Da pagare`, `Parziale`, `Pagato`).
+- **Visualizzazione**: la riga pacchetto mostra tipo, stato, incassato/saldo e numero di appuntamenti; gli appuntamenti mostrano il pacchetto collegato; il pagamento mostra la descrizione della pratica. L’Archivio mostra gli stessi dati in sola lettura.
+- **Modifica**: il form nasconde il calendario e i campi acconto; il riepilogo mostra la pratica corrente. Tipo, lezioni, prezzo e data aggiornano pacchetto e pagamento collegato, senza toccare gli appuntamenti.
+- **Eliminazione**: `pacchettoDeletionPlan` include gli appuntamenti; la conferma indica quanti non svolti verranno eliminati e quanti svolti resteranno nello storico. `deletePacchettoCascade` rimuove i non svolti e azzera `pacchettoId` sugli svolti.
+- **Compatibilità**: modello dati esteso con `pacchetto.tipo` e `appuntamento.pacchettoId`; export `schemaVersion: 3`; import dei backup precedenti con default sicuri.
+- **Stili**: blocchi form, checkbox, riepilogo e anteprima calendario con evidenza dei conflitti; layout verificato a 375 px.
+
+## Test effettivi
+
+- Suite completa: **571 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **101/101**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **34/34**, Fase 10 **61/61**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **49/49**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 25 **60/60**.
+- `test_fase25.py` copre: form e default, anteprima, vendita completa, date settimanali/quindicinali, conflitto e blocco, vendita senza calendario, acconto zero/pieno/parziale, incasso del saldo, modifica senza rigenerare il calendario, eliminazione con appuntamenti svolti/non svolti, undo, persistenza, conservazione dello stato del form, export e mobile.
+- Le suite esistenti creano pacchetti con programmazione disattivata per restare deterministiche; la nuova suite copre il flusso automatico.
+
+## Problemi aperti / note
+
+- La modifica di un pacchetto non rigenera il calendario; per cambiare le date si modificano gli appuntamenti nella sezione Appuntamenti.
+- La vendita si blocca in caso di conflitto; non c’è uno spostamento automatico delle date.
+- Il consumo delle lezioni resta manuale.
+- Non esiste un catalogo di tipi con lezioni/prezzo predefiniti.
+- Modifiche locali sul branch `feat/fase-24-29-vendita-pacchetto`; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fasi 24–29 completate localmente. L’app è pronta per la prova locale; attendere indicazioni per commit, branch/PR e pubblicazione.
+
+---
+
+# Fasi 30–36 — Scheda a due sezioni e Appuntamenti globali (completata e verificata localmente)
+
+## Richiesta
+
+- Nella scheda cliente solo due sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**.
+- Ogni sezione con la stessa suddivisione: pacchetto/lezione, pagamenti, calendario.
+- Istruttore sul pacchetto/lezione, modificabile per ogni lezione.
+- Date delle lezioni scelte singolarmente, senza cadenza settimanale.
+- Pagamenti più modulabili: più acconti e saldo, senza rate pianificate con scadenza.
+- Nuova tab **Appuntamenti** in home con tutte le date, consultabili e modificabili.
+- Nessuna pubblicazione su GitHub.
+
+## Decisioni
+
+- `pacchetti` rappresenta sia i pacchetti sia le lezioni singole tramite `categoria: "pacchetto" | "singola"`.
+- `istruttore` sul pacchetto/lezione e su ogni appuntamento; l’appuntamento può sovrascrivere il valore predefinito.
+- Date individuali: una riga per lezione, compilabile o lasciata “da programmare”; le date mancanti si aggiungono dal calendario.
+- Pagamenti: una pratica per pacchetto/lezione, totale contrattuale e incassi liberi (Acconto 1, Acconto 2, Acconto 3, Saldo). Nessuna scadenza o rata pianificata.
+- Conflitto su data/ora: il salvataggio viene bloccato con indicazione della lezione occupata.
+- La modifica del pacchetto/lezione non rigenera il calendario.
+- L’eliminazione rimuove gli appuntamenti non svolti; quelli svolti restano nello storico senza collegamento.
+- Migrazione: appuntamenti e pagamenti senza pacchetto diventano lezioni singole; i dati orfani restano separati.
+
+## Implementazione effettiva
+
+- **Modello**: `pacchetto.categoria`, `pacchetto.istruttore`, `appuntamento.istruttore`; export `schemaVersion: 4`; normalizzazione con default sicuri.
+- **Migrazione**: alla lettura, gli appuntamenti senza `pacchettoId` vengono collegati a una lezione singola con prezzo 0; i pagamenti senza `pacchettoId` a una lezione singola con il prezzo del pagamento. Nessun importo viene inventato.
+- **Scheda**: due sezioni; ogni pacchetto/lezione è un gruppo con i tre blocchi. I gruppi mostrano tipo, istruttore, lezioni, prezzo, stato pratica, numero di lezioni programmate, incassi e calendario.
+- **Form unico**: `#form-cliente-pacchetto` serve sia i pacchetti sia le lezioni singole tramite `categoria`. Campi: tipo, istruttore, lezioni (1 fissa per la lezione singola), prezzo, data vendita, acconti iniziali multipli e righe data/ora/istruttore.
+- **Date individuali**: le righe sono generate in base al numero di lezioni; una riga vuota resta da programmare. Il riepilogo mostra “X di Y lezioni programmate” e i conflitti.
+- **Acconti**: righe iniziali dinamiche con “Aggiungi acconto”, importo, data e nota. Dopo la vendita si aggiungono altri incassi dal blocco Pagamenti. Saldo e stato sono derivati.
+- **Istruttore**: campo libero con suggerimenti; ogni riga del calendario ha il proprio istruttore; il form appuntamento permette di modificarlo.
+- **Calendario**: aggiunta, modifica, eliminazione e “Segna fatto” per ogni lezione; il pulsante “Aggiungi lezione” compare finché non sono state programmate tutte le lezioni.
+- **Vista Appuntamenti**: quarta card in home; nuova vista `#appuntamenti`, agenda globale raggruppata per giorno, ricerca e filtri per periodo, stato e categoria, modifica di data/ora/istruttore/stato, collegamento alla scheda cliente.
+- **Eliminazione**: piano pacchetto/lezione esteso agli appuntamenti; conferma con conteggi di pagamenti, incassi e appuntamenti non svolti; gli appuntamenti svolti restano con `pacchettoId: 0`. Undo completo.
+- **Accessibilità e layout**: `Escape` chiude il form attivo, focus al pulsante di apertura, form etichettati, blocchi e righe responsive a 375 px.
+- **Stili**: griglia dei tre blocchi, righe dinamiche, stato conflitto, agenda e vista Appuntamenti.
+
+## Test effettivi
+
+- Suite completa: **525 test superati, 0 fallimenti** (01/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **65/65**.
+- `test_fase30.py` copre: due sezioni, form unico, vendita con date individuali e istruttori diversi, due acconti, aggiunta lezione, conflitto, saldo, lezione singola, vista Appuntamenti con filtri e modifica, eliminazione con undo, migrazione, persistenza, export v4 e mobile.
+- Le suite esistenti sono state aggiornate alla nuova UI; i test delle vecchie viste autonome e del pagamento manuale sono stati rimossi o sostituiti. Il totale scende da 571 a 525 perché la vecchia suite della vendita (60 test) è stata sostituita da `test_fase30.py` (65 test) e alcune suite sono state riscritte sui nuovi flussi.
+- Verifica manuale: vendita pacchetto/lezione, date individuali, istruttori diversi, più acconti, conflitto, modifica, eliminazione/undo, vista Appuntamenti, filtro/ricerca, migrazione, persistenza e mobile senza overflow.
+
+## Problemi aperti / note
+
+- Non esistono rate pianificate con scadenza: gli acconti sono incassi liberi, come richiesto.
+- Non esiste un registro istruttori con disponibilità o conflitti per istruttore.
+- La modifica di un pacchetto/lezione non rigenera il calendario.
+- Il consumo delle lezioni resta manuale con “Consuma lezione”.
+- La migrazione converte i dati non collegati in lezioni singole: consigliato un backup JSON prima della prima apertura.
+- Il branch `feat/fase-30-36-scheda-due-sezioni` è locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fasi 30–36 completate e verificate localmente. L’app è pronta per la prova locale; nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 37 — Scheda cliente semplificata e schede minimal (completata e verificata localmente)
+
+## Richiesta
+
+- Rimuovere il tasto **Rinomina** dalla scheda cliente: basta **Modifica**.
+- Sostituire “Vendi” con “Aggiungi” per pacchetti e lezioni.
+- Nel form pacchetto: sottosezione **Pacchetto**, senza istruttore e senza data di vendita; sottosezione **Pagamento** senza nota e data negli acconti; date lezioni invariate.
+- Nel form lezione singola: sottosezione **Lezione singola**, senza istruttore e senza data di vendita; sottosezione **Pagamento** senza nota e data; **Data lezione** al singolare.
+- Output di pacchetto e lezione singola in un’unica scheda orizzontale per elemento, modificabile, non tre schede separate; interfaccia minimale per persone poco tecnologiche.
+
+## Decisioni
+
+- La data di vendita è automatica: `todayStr()` per i nuovi pacchetti/lezioni; in modifica resta la data originale.
+- L’istruttore non è più un campo del pacchetto/lezione: si inserisce in ogni riga data. Per compatibilità, `pacchetto.istruttore` viene valorizzato con il primo istruttore inserito e serve solo come default interno per “Aggiungi lezione”.
+- Gli acconti iniziali hanno solo l’importo; la data è oggi e la nota è automatica (`Acconto 1`, `Acconto 2`, ...).
+- Le tre sezioni dell’output sono pannelli piatti dentro una sola scheda, separate da linee sottili, senza card annidate.
+
+## Implementazione effettiva
+
+- **Scheda cliente**: rimosso il pulsante `Rinomina` e il relativo handler; resta `Modifica`.
+- **Pulsanti e titoli**: `+ Aggiungi pacchetto`, `+ Aggiungi lezione`; titoli form `Pacchetto` e `Lezione singola`; pulsanti verdi `Aggiungi pacchetto` e `Aggiungi lezione`.
+- **Form pacchetto**: leggenda `Pacchetto`, campi tipo, lezioni e prezzo; rimossi istruttore e data vendita; leggenda `Pagamento`; leggenda `Date lezioni`.
+- **Form lezione singola**: leggenda `Lezione singola`, tipo e prezzo; rimossi istruttore e data vendita; leggenda `Pagamento`; leggenda `Data lezione`.
+- **Acconti iniziali**: riga con solo importo e pulsante Rimuovi; data odierna e nota `Acconto N` automatiche.
+- **Calendario**: ogni riga mantiene data, ora e istruttore; l’istruttore è quindi diverso per lezione.
+- **Output**: una sola scheda `.lezione-group` per pacchetto/lezione; le tre sezioni Pacchetto, Pagamenti e Calendario sono pannelli piatti nella stessa scheda, separati da bordi sottili; ridotte le righe di riepilogo (rimossi istruttore e data di vendita dal gruppo).
+- **Modifica**: il form continua a nascondere calendario e acconti e permette di cambiare tipo, lezioni e prezzo; gli appuntamenti restano invariati.
+- **Stili**: rimosse le card interne; griglia a tre colonne su desktop e colonna singola su mobile; riga acconto a due colonne; etichette di sezione più piccole.
+
+## Test effettivi
+
+- Suite completa: **532 test superati, 0 fallimenti** (02/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **72/72**.
+- Nuovi controlli in `test_fase30.py`: pulsanti “Aggiungi”, titoli e leggende, assenza dei campi istruttore/data, data automatica, note automatiche degli acconti, form lezione singola con “Data lezione”.
+- Verifica manuale: form pacchetto e lezione singola, data automatica, acconti senza data/nota, istruttore solo nelle date, scheda compatta, modifica, mobile.
+
+## Problemi aperti / note
+
+- La data di vendita non è modificabile dall’interfaccia: è sempre oggi per i nuovi inserimenti.
+- L’istruttore del pacchetto non è più un campo separato: si inserisce nelle singole date; il primo istruttore viene usato come default interno.
+- Gli acconti iniziali non permettono una data diversa da oggi né una nota personalizzata; gli incassi successivi dal blocco Pagamento mantengono data e nota.
+- Il branch resta locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 37 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 38 — Output minimale e consumo automatico (completata e verificata localmente)
+
+## Richiesta
+
+- Output di pacchetto e lezione singola su una sola riga, con meno dati.
+- Due soli tasti in fondo: **Modifica/Elimina** e **Pagamento**.
+- Riga strutturata con: nome pacchetto/lezione, utilizzate/rimaste, stato pagamento, data.
+- Nei pacchetti, elenco compatto delle date con piccoli tasti Modifica/Elimina.
+- Consumo automatico delle lezioni alla scadenza, se non modificate o eliminate.
+
+## Implementazione effettiva
+
+- **Riga compatta**: ogni gruppo mostra titolo, `Lezioni utilizzate/rimaste`, stato pagamento (`Pagato`, `Da pagare`, `Parzialmente pagato`, `Da verificare`) e la prossima data (o l’unica data per la lezione singola).
+- **Due azioni**: `Modifica/Elimina` apre il form di modifica; `Pagamento` apre/chiude il pannello con contratto, incassato, saldo, ricevute e azioni di incasso.
+- **Eliminazione**: il form di modifica include il tasto **Elimina**, visibile solo in modifica; usa lo stesso piano di eliminazione con conferma e undo.
+- **Date compatte**: sotto la riga, elenco delle date con data/ora, istruttore, tipo e stato; piccoli tasti `Modifica` ed `Elimina`. Il tasto `+ Aggiungi lezione` resta disponibile finché non sono programmate tutte le lezioni.
+- **Consumo automatico**: `autoConsumeLezioni()` calcola le lezioni collegate con data/ora già scadute e porta `utilizzate` almeno a quel numero, senza superare `lezioni`. Viene eseguito al caricamento, a ogni `commit`, a ogni `refresh` e con un controllo periodico di 60 secondi; se cambia qualcosa viene salvato.
+- **Normalizzazione**: gli appuntamenti con `pacchettoId` inesistente vengono scollegati e convertiti in lezioni singole, evitando calendari non visibili nella scheda cliente.
+- **Nessun tasto manuale** “Consuma lezione”: il consumo avviene solo allo scadere della data.
+- **Stili**: riga a colonna con azioni allineate in fondo a destra (larghezza piena su mobile), pannello pagamento separato da una linea, date in caratteri più piccoli, pulsanti `btn-tiny`, form elimina in rosso.
+
+## Test effettivi
+
+- Suite completa: **533 test superati, 0 fallimenti** (02/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **73/73**.
+- Aggiornati i test per il pannello Pagamento espandibile, l’eliminazione dal form, la riga compatta, l’elenco date e il consumo automatico.
+- Verifica manuale: riga unica, due tasti, pagamento espandibile, date compatte, eliminazione dal form, consumo automatico, persistenza, mobile senza overflow.
+
+## Problemi aperti / note
+
+- Il consumo automatico è incrementale: una lezione già scaduta resta consumata anche se viene modificata o eliminata successivamente. Modifiche/eliminazioni prima della scadenza evitano il consumo.
+- Il controllo automatico usa data e ora locali del dispositivo.
+- Il pannello Pagamento è chiuso per impostazione predefinita; i dettagli si vedono con il tasto Pagamento.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 38 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 39 — Intestazione compatta delle schede (completata e verificata localmente)
+
+## Richiesta
+
+- Titolo del pacchetto/lezione e tasti `Modifica/Elimina` e `Pagamento` sulla stessa riga.
+- Informazioni (lezioni, stato pagamento, data/ora) su una seconda riga con carattere più piccolo.
+- Divisore sottile e inizio immediato dell’elenco delle lezioni.
+- Ridurre l’altezza complessiva, senza cambiare dati, funzionalità o logica dei pulsanti.
+- Stesso layout per la lezione singola; su smartphone i tasti possono andare a capo.
+
+## Implementazione effettiva
+
+- **HTML**: in `lezioneGroup` l’intestazione è ora `lezione-row__top` con titolo e azioni sulla stessa riga; `lezione-row__meta` è una seconda riga separata.
+- **CSS**: `.lezione-row` non è più una colonna con gap; `.lezione-row__top` è un flex orizzontale con wrap; i tasti hanno altezza e padding ridotti; il meta ha font `0.82rem` e margine minimo.
+- **Spaziatura**: ridotti i margini/padding di `.lezione-dates`, `.lezione-payment` e delle azioni; il divisore è subito sotto il meta e l’elenco parte senza spazi vuoti.
+- **Responsive**: a 40rem i tasti diventano pieni e vanno a capo sotto il titolo, mantenendo la leggibilità e i target touch.
+- **Nessuna modifica** a modello dati, azioni, pannello pagamento, eliminazione o consumo automatico.
+
+## Test effettivi
+
+- Suite completa: **533 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **73/73**.
+- Verifica visiva desktop e mobile: intestazione su due righe, divisore subito sotto, elenco date immediato, nessun overflow.
+
+## Problemi aperti / note
+
+- Su schermi molto stretti i due tasti occupano una riga ciascuno; è il comportamento richiesto per evitare compressioni.
+- Nessuna modifica a dati o funzionalità.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 39 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 40 — Date in formato gg/mm/aaaa (completata e verificata localmente)
+
+## Richiesta
+
+- Uniformare tutte le date dell’applicazione al formato `gg/mm/aaaa`.
+- Correggere in particolare i campi dei form “Aggiungi pacchetto” e “Aggiungi lezione”, che mostravano `mm/gg/anno`.
+
+## Decisioni
+
+- I campi data non usano più `input[type=date]`, il cui formato dipende dalla lingua del browser.
+- Sono campi testuali con placeholder `gg/mm/aaaa`, `inputmode="numeric"`, massimo 10 caratteri e normalizzazione automatica al blur.
+- I dati restano memorizzati in ISO (`AAAA-MM-GG`); la conversione avviene solo nell’interfaccia.
+- L’input accetta anche date ISO o con separatori diversi, ma le normalizza in `gg/mm/aaaa`.
+
+## Implementazione effettiva
+
+- **Helper**: aggiunti `todayInput()` e `parseDateInput()`; `isoToDateLabel()` resta il formato di visualizzazione.
+- **Campi attivi**: date delle lezioni nel form pacchetto, data del form appuntamento nella scheda e nella vista globale, data incasso nel form pagamento. Convertito anche il vecchio form pagamento non più renderizzato.
+- **Form**: `toggleForm` imposta le date predefinite in `gg/mm/aaaa` e, in modifica, converte i valori ISO del record nel formato italiano.
+- **Calendario**: le righe data leggono e validano `gg/mm/aaaa`; i confronti con gli appuntamenti usano ISO.
+- **Incassi**: la data precompilata è `gg/mm/aaaa`; il submit converte in ISO.
+- **Normalizzazione**: al blur una data valida viene riscritta in `gg/mm/aaaa`; le date invalide vengono bloccate dalla validazione esistente.
+- **Nessuna modifica** a modello dati, export/import o logica di salvataggio.
+
+## Test effettivi
+
+- Suite completa: **536 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **76/76**.
+- Nuovi controlli in `test_fase30.py`: campi data testuali con placeholder `gg/mm/aaaa`, form pacchetto, lezione singola, appuntamento nella scheda e nella vista globale, data incasso.
+- Verifica manuale: digitazione `3/11/2026`, normalizzazione a `03/11/2026`, salvataggio ISO, riapertura in modifica e mobile.
+
+## Problemi aperti / note
+
+- Il selettore data nativo del browser è stato sostituito da un campo testuale guidato: non c’è un calendario popup.
+- Le date nei report, CSV e riepiloghi erano già `gg/mm/aaaa`.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 40 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 41 — Calendario affiancato ai campi data (completata e verificata localmente)
+
+## Richiesta
+
+- Affiancare un calendario ai campi data durante la compilazione della scheda, per scegliere le date più rapidamente.
+- Mantenere la digitazione manuale in `gg/mm/aaaa` e il formato ISO nei dati.
+
+## Decisioni
+
+- Un solo input `type=date` nascosto (`#date-picker-helper`) serve tutti i campi data, evitando componenti duplicati.
+- Ogni campo data visibile resta testuale e ha accanto un pulsante con icona calendario.
+- Il pulsante apre il selettore nativo con `showPicker()` quando disponibile; altrimenti usa `focus()`/`click()`.
+- La data scelta viene convertita in `gg/mm/aaaa`, scritta nel campo visibile e notificata con eventi `input` e `change`.
+- Nessuna nuova dipendenza e nessuna modifica al modello dati o alla persistenza.
+
+## Implementazione effettiva
+
+- **Helper condiviso**: aggiunti `CALENDAR_ICON`, `dateFieldHtml()` e `openDatePicker()` in `app.js`; l'input nativo nascosto è in `index.html`.
+- **Campi coperti**: date delle lezioni nel form pacchetto, data del form appuntamento nella scheda e nella vista globale, data incasso nel pannello pagamento.
+- **Sincronizzazione**: il listener `change` dell'helper aggiorna il campo attivo, mantiene il formato italiano e riporta il focus sul campo.
+- **Layout**: `.date-field` affianca input e pulsante; le righe data usano `.dynamic-row--schedule`: su desktop Data, Ora, Istruttore e stato stanno sulla stessa riga, sotto i 48rem passano a due righe e su mobile a colonna singola.
+- **Leggibilità**: il campo data ha padding orizzontale ridotto e testo a `--step--1`, così `gg/mm/aaaa` resta visibile anche a 375 px.
+- **Stile**: pulsante calendario con bordo, hover, focus visibile e icona SVG inline coerente con il resto dell'interfaccia.
+- **Nessuna modifica** a salvataggio, export/import, report, eliminazioni o consumo automatico delle lezioni.
+
+## Test effettivi
+
+- Suite completa: **538 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **68/68**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**.
+- Nuovi controlli in `test_fase30.py`: presenza del pulsante calendario nei form, helper `type=date`, selezione che aggiorna il campo visibile in `gg/mm/aaaa`, campo data incasso con calendario.
+- Verifica manuale: apertura del calendario dal pulsante, selezione di una data, normalizzazione `5/12/2026` → `05/12/2026`, assenza di errori console, layout desktop e mobile 375 px senza overflow.
+
+## Problemi aperti / note
+
+- L'aspetto del selettore nativo dipende dal browser; il fallback senza `showPicker()` può richiedere un ulteriore tocco sul campo.
+- Il calendario è un aiuto alla compilazione: la validazione e il salvataggio restano quelli del campo testuale.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 41 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 42 — Resoconto semplificato e sezione Collaboratori (completata e verificata localmente)
+
+## Analisi della sezione attuale
+
+- Filtri: mese (12 mesi a ritroso) e cliente; i filtri aggiornano l'intera vista.
+- Riepilogo: 6 card (incassato, crediti, pagamenti da verificare, appuntamenti, clienti attivi, trend incassi), più note di attenzione.
+- Elenco sempre visibile dell'incidenza incassi per cliente, totale lezioni rimanenti e relativi avvisi.
+- Azioni CSV incassi/pagamenti e report stampabile separato; backup e ripristino nella stessa vista.
+- Dati già disponibili: `data.incassi`, `data.pagamenti`, `data.pacchetti`, `data.appuntamenti`.
+- Le lezioni svolte sono gli appuntamenti con `fatto === true`; istruttore e data sono già presenti sull'appuntamento, con fallback all'istruttore del pacchetto.
+- Non esiste un registro collaboratori separato e non serve crearlo: le giornate si ricavano dai dati esistenti.
+
+## Nuova organizzazione
+
+1. **Riepilogo** — tre indicatori essenziali:
+   - incassato del periodo;
+   - crediti residui al fine periodo;
+   - lezioni svolte nel periodo, con totale programmate.
+   - Trend incassi come nota compatta sotto l'incassato, non come card separata.
+2. **Lezioni** — riepilogo di svolte, da svolgere e lezioni rimanenti; avvisi su pagamenti da verificare e incassi senza data.
+   - Dettagli espandibili:
+     - incidenza incassi per cliente;
+     - lezioni rimanenti e nota sui crediti;
+     - pulsanti CSV incassi e pagamenti.
+3. **Collaboratori** — registro derivato automaticamente:
+   - filtro per collaboratore, mese, anno e intervallo di date (l'intervallo ha precedenza su mese/anno);
+   - totale collaboratori, giornate e lezioni del periodo;
+   - scheda compatta per collaboratore con giornate totali e lezioni totali;
+   - dettaglio espandibile delle date, con numero di lezioni per giornata;
+   - ulteriore dettaglio delle singole attività (ora, cliente, tipo, lezione).
+
+## Regole del registro collaboratori
+
+- Fonte unica: appuntamenti con `fatto === true` e data valida; nessun nuovo campo salvato. Il consumo automatico delle lezioni scadute imposta `fatto = true`, quindi registro e KPI si aggiornano da soli.
+- Nome: `a.istruttore`, altrimenti `pk.istruttore`; se assente, gruppo "Senza istruttore" con avviso.
+- Giornate: una per data distinta per collaboratore, anche con più lezioni nello stesso giorno.
+- Lezioni non svolte o eliminate non generano giornate. Una lezione svolta rimasta senza collegamento viene comunque conteggiata come “Senza lezione”, perché la giornata di lavoro è avvenuta.
+- Modifiche, spostamenti ed eliminazioni aggiornano il registro al successivo render perché tutto è derivato.
+- Confronto nomi senza distinzione tra maiuscole/minuscole; visualizzazione del primo nome incontrato.
+- Nessuna duplicazione di dati e nessuna modifica al modello `cinofilo-data-v1`.
+
+## Implementazione effettiva
+
+- **Riepilogo**: tre card (Incassato, Crediti residui, Lezioni svolte); trend incassi come meta della prima card; rimosse le card clienti attivi, appuntamenti e pagamenti da verificare come indicatori separati.
+- **Lezioni**: chip sintetiche per lezioni da svolgere e rimanenti; avvisi compatti su pagamenti legacy e incassi senza data; dettaglio espandibile con incassi per cliente, nota sui crediti e pulsanti CSV. Il conteggio delle svolte resta nel Riepilogo per evitare duplicazioni.
+- **Collaboratori**: sezione con filtri indipendenti (collaboratore, mese, anno, Dal/Al), riepilogo del periodo, schede compatte per collaboratore e dettagli annidati per data e attività.
+- **Registro derivato**: `collaboratorRegistry()` aggrega gli appuntamenti con `fatto === true`; `filteredCollaboratorRegistry()` applica i filtri. Nessun dato viene scritto in `localStorage`.
+- **Consumo automatico**: `autoConsumeLezioni()` segna `fatto = true` per ogni appuntamento scaduto, aggiorna `utilizzate` e restituisce `changed`; caricamento, salvataggio, comandi e controllo periodico salvano e ridisegnano registro e KPI.
+- **Fallback istruttore**: usa `a.istruttore`, poi `pk.istruttore`; se manca entrambi, gruppo “Senza istruttore” con avviso. Eliminando un pacchetto, l'istruttore viene copiato sugli appuntamenti svolti prima di azzerare il collegamento.
+- **Interfaccia**: filtri mese/cliente in alto; collaboratori indipendenti con etichetta del periodo; `<details>` nativi; focus ripristinato dopo i cambi filtro; stato del dettaglio pagamenti mantenuto.
+- **Accessibilità**: `role="group"` sui filtri, `role="status"` sul riepilogo collaboratori, `role="alert"` sull'intervallo non valido, etichette “Dal”/“Al” coerenti; font dei campi data dei filtri a 1rem su mobile per evitare lo zoom iOS.
+- **Calendario**: il selettore condiviso parte vuoto se il campo è vuoto, così anche la scelta di “oggi” genera un cambio.
+- **Invariati**: report stampabile, CSV, export/import JSON, backup, calcolo incassi/crediti e eliminazioni con undo.
+
+## Test effettivi
+
+- Suite completa: **592 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **69/69**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **31/31**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**, Fase 42 **53/53**.
+- `test_fase42.py` copre: tre sezioni e KPI, assenza delle vecchie card, dettaglio pagamenti, registro con giornate uniche, fallback istruttore, gruppo senza istruttore, esclusione delle lezioni non svolte, dettagli attività, filtri collaboratore/mese/anno/intervallo, intervallo non valido, focus, aggiornamento dopo segna-fatto/modifica/eliminazione, consumo automatico che imposta `fatto`, conservazione istruttore alla cancellazione del pacchetto, CSV, mobile e console.
+- Suite esistenti aggiornate alle nuove etichette e ai dettagli espandibili, mantenendo i valori economici, i CSV e il report.
+
+## Problemi aperti / note
+
+- Il registro collaboratori usa esclusivamente `fatto === true`: le lezioni consumate automaticamente per scadenza ma non segnate come Fatto non generano giornate. La scelta è esplicita nell'interfaccia.
+- “Segna fatto” resta un'azione del preesistente Appuntamenti, senza azione inversa: un clic errato richiede la modifica manuale. Non è stato modificato in questa fase.
+- I pulsanti CSV sono nel dettaglio espandibile “Dettaglio pagamenti, incassi ed export”.
+- Filtri mese/cliente del Riepilogo e filtri della sezione Collaboratori sono indipendenti; l'etichetta del periodo chiarisce il diverso ambito.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 42 completata e verificata localmente. Nessuna pubblicazione su GitHub.
+
+---
+
+# Fase 43 — Archivio clienti e archivio lezioni (completata e verificata localmente)
+
+## Analisi
+
+- La vista `archivio` contiene oggi solo l'elenco dei clienti archiviati, con ricerca, scheda consultabile, riattivazione ed eliminazione.
+- La vista `appuntamenti` mostra tutte le lezioni, comprese quelle passate, con filtro “Passati”.
+- Le lezioni svolte restano nel loro pacchetto e nello storico cliente; non esiste un elenco globale delle lezioni concluse.
+- `autoConsumeLezioni()` marca `fatto` alla scadenza; `fatto` non modifica il giorno della lezione.
+- Il sistema usa già `todayStr()` e un controllo periodico ogni 60 secondi.
+
+## Decisioni
+
+- La vista Archivio viene divisa in **Archivio clienti** e **Archivio lezioni**, senza cambiare il modello dati.
+- Una lezione è archiviata quando la sua data è precedente a quella odierna (`a.data < todayStr()`), quindi dopo la fine della giornata secondo l'orologio del sistema.
+- Le lezioni di oggi restano in Appuntamenti anche se segnate Fatto; passano in Archivio al cambio di data.
+- Le lezioni archiviate restano visibili nella scheda cliente e nei pacchetti come storico; spariscono solo dalla vista Appuntamenti.
+- L'Archivio lezioni è consultabile in sola lettura, raggruppato per giorno, con cliente, ora, istruttore, tipo, lezione e tag Fatto/Scaduta.
+- Il filtro “Passati” di Appuntamenti viene rimosso perché le lezioni passate non sono più lì.
+- Aggiornamento senza reload tramite controllo periodico: oltre al consumo, il timer rileva il cambio di `todayStr()` e ridisegna; un controllo su `visibilitychange` copre i ritorni da scheda in background.
+
+## Implementazione effettiva
+
+- **Archivio clienti**: mantenuti elenco, ricerca, scheda, riattivazione ed eliminazione; aggiunti titolo di sezione e conteggio filtrato.
+- **Archivio lezioni**: nuova sezione in sola lettura, raggruppata per giorno, con cliente, ora, istruttore, tipo, lezione e badge Fatto/Scaduta; ricerca per cliente, istruttore, tipo, data e lezione.
+- **Movimento automatico**: `lezioneArchiviata()` considera archiviata ogni lezione con `data < todayStr()`. Le lezioni di oggi restano in Appuntamenti; al cambio di data spariscono dall'agenda e compaiono in Archivio.
+- **Appuntamenti**: esclusione delle lezioni archiviate, introduzione esplicativa e rimozione del filtro “Passati” ormai inutile.
+- **Senza reload**: `tickCalendar()` controlla consumo e cambio di `todayStr()` ogni 60 secondi; `visibilitychange` esegue lo stesso controllo al ritorno sulla scheda. Salvataggio e refresh avvengono solo quando serve.
+- **Storico**: le lezioni archiviate restano nella scheda cliente e nei pacchetti; l'archivio globale non duplica dati e non introduce nuovi campi.
+- **Responsive**: sezioni, conteggi, ricerca e righe compatte verificate a 375 px senza overflow.
+
+## Test effettivi
+
+- Suite completa: **624 test superati, 0 fallimenti** (03/11/2026).
+- Regressione **69/69**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**, Fase 42 **53/53**, Fase 43 **31/31**.
+- `test_fase43.py` copre: due sottotitoli, conteggi, contenuto e ordinamento archivio, tag Fatto, ricerca e stato vuoto, assenza di lezioni passate da Appuntamenti, permanenza nello storico cliente, movimento al cambio giornata senza reload con orologio Playwright, mobile e console.
+- Suite Fase 12 aggiornata per l'agenda di oggi/futuro e per la verifica della lezione passata in Archivio.
+
+## Problemi aperti / note
+
+- L'Archivio lezioni è in sola consultazione: per modificare una lezione archiviata si usa la scheda cliente.
+- L'archiviazione segue la data locale del sistema; il passaggio avviene al primo controllo dopo la mezzanotte (entro 60 secondi) o al ritorno sulla scheda.
+- Le lezioni archiviate restano nei pacchetti e nei conteggi del Resoconto/Collaboratori.
+- Branch locale; nessun push, merge o pubblicazione.
+
+## Prossimo passo / Fermo
+
+- Fase 43 completata e verificata localmente. Nessuna pubblicazione su GitHub.
