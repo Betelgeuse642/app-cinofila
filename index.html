@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Addestramento Cinofilo</title>
+  <title>Gestione Cinofila</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -13,40 +13,65 @@
   <!-- =========== HOME =========== -->
   <main id="view-home" class="view">
     <header class="home-header">
-      <p class="home-eyebrow">Studio cinofilo · gestione quotidiana</p>
-      <h1 class="home-title">Addestramento Cinofilo</h1>
-      <p class="home-subtitle">Clienti, lezioni e incassi in un unico posto, sul tuo dispositivo.</p>
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="24" cy="30" rx="10" ry="8"></ellipse>
+          <ellipse cx="11" cy="19" rx="4" ry="5"></ellipse>
+          <ellipse cx="20" cy="12" rx="4" ry="5"></ellipse>
+          <ellipse cx="31" cy="14" rx="4" ry="5"></ellipse>
+          <ellipse cx="39" cy="23" rx="3.5" ry="4.5"></ellipse>
+        </svg>
+      </div>
+      <p class="home-eyebrow">Il tuo studio, ogni giorno</p>
+      <h1 class="home-title">Gestione Cinofila</h1>
+      <p class="home-subtitle">Semplice, veloce, sempre con te.</p>
     </header>
 
-    <nav class="home-grid" aria-label="Sezione principale">
-      <a href="#clienti" class="home-btn" data-nav="clienti">
-        <span class="home-btn__no" aria-hidden="true">01</span>
-        <span class="home-btn__label">Scheda cliente</span>
-        <span class="home-btn__hint">Anagrafica, pagamenti, appuntamenti e pacchetti</span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
+    <nav class="home-grid" aria-label="Sezioni principali">
+      <a href="#oggi" class="home-btn home-card home-card--blue" data-nav="oggi">
+        <span class="home-card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"></path></svg>
+        </span>
+        <span class="home-card__body">
+          <span class="home-card__title">Oggi</span>
+          <span class="home-card__hint" id="home-oggi-hint">Appuntamenti e lezioni di oggi</span>
+        </span>
+        <span class="home-card__arrow" aria-hidden="true">→</span>
       </a>
-      <a href="#appuntamenti" class="home-btn" data-nav="appuntamenti">
-        <span class="home-btn__no" aria-hidden="true">02</span>
-        <span class="home-btn__label">Appuntamenti</span>
-        <span class="home-btn__hint">Tutte le lezioni in calendario</span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      <a href="#clienti" class="home-btn home-card home-card--green" data-nav="clienti">
+        <span class="home-card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        </span>
+        <span class="home-card__body">
+          <span class="home-card__title">Clienti</span>
+          <span class="home-card__hint" id="home-clienti-hint">Clienti e cani</span>
+        </span>
+        <span class="home-card__arrow" aria-hidden="true">→</span>
       </a>
-      <a href="#resoconto" class="home-btn" data-nav="resoconto">
-        <span class="home-btn__no" aria-hidden="true">03</span>
-        <span class="home-btn__label">Resoconto</span>
-        <span class="home-btn__hint">Mese, report e backup</span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      <a href="#pagamenti" class="home-btn home-card home-card--orange" data-nav="pagamenti">
+        <span class="home-card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"></rect><path d="M2 10h20M6 15h4"></path></svg>
+        </span>
+        <span class="home-card__body">
+          <span class="home-card__title">Pagamenti</span>
+          <span class="home-card__hint" id="home-pagamenti-hint">Incassi, saldi e movimenti</span>
+        </span>
+        <span class="home-card__arrow" aria-hidden="true">→</span>
       </a>
-      <a href="#archivio" class="home-btn" data-nav="archivio">
-        <span class="home-btn__no" aria-hidden="true">04</span>
-        <span class="home-btn__label">Archivio</span>
-        <span class="home-btn__hint">Clienti archiviati<br />Lezioni archiviate</span>
-        <span id="archivio-count" class="home-btn__count" hidden></span>
-        <span class="home-btn__arrow" aria-hidden="true">→</span>
+      <a href="#report" class="home-btn home-card home-card--purple" data-nav="report">
+        <span class="home-card__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>
+        </span>
+        <span class="home-card__body">
+          <span class="home-card__title">Report</span>
+          <span class="home-card__hint" id="home-report-hint">Statistiche e collaboratori</span>
+        </span>
+        <span class="home-card__arrow" aria-hidden="true">→</span>
       </a>
     </nav>
     <div class="home-extra">
-      <p class="home-extra__hint">I dati restano solo su questo dispositivo. Esporta un backup dal Resoconto.</p>
+      <a href="#archivio" class="home-secondary-link" data-nav="archivio">Archivio clienti e lezioni <span id="archivio-count" class="home-btn__count" hidden></span></a>
+      <p class="home-extra__hint">I dati restano solo su questo dispositivo. Esporta un backup da Report.</p>
     </div>
   </main>
 
@@ -54,9 +79,13 @@
   <main id="view-clienti" class="view is-hidden">
     <header class="section-header">
       <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Scheda cliente</h2>
-      <button id="btn-nuovo-cliente" class="btn-action" type="button" aria-controls="form-cliente" aria-expanded="false">+ Nuovo cliente</button>
+      <h2>Clienti</h2>
+      <div class="section-header__actions">
+        <a href="#archivio" class="btn-action" data-nav="archivio">Archivio</a>
+        <button id="btn-nuovo-cliente" class="btn-action btn-primary" type="button" aria-controls="form-cliente" aria-expanded="false">+ Nuovo cliente</button>
+      </div>
     </header>
+    <p class="section-intro">Trova rapidamente clienti e cani; apri la scheda per lezioni, pagamenti e storico.</p>
     <div class="filter-bar">
       <input id="filtro-clienti" type="search" placeholder="Cerca nome, cane o telefono" aria-label="Cerca clienti" />
       <select id="filtro-clienti-stato" aria-label="Filtra clienti per stato">
@@ -76,6 +105,10 @@
         <label>
           <span>Telefono</span>
           <input type="tel" name="telefono" autocomplete="off" />
+        </label>
+        <label>
+          <span>Email (facoltativa)</span>
+          <input type="email" name="email" autocomplete="off" />
         </label>
         <label>
           <span>Nome del cane</span>
@@ -123,19 +156,24 @@
   <main id="view-appuntamenti" class="view is-hidden">
     <header class="section-header">
       <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Appuntamenti</h2>
+      <h2>Oggi</h2>
+      <div class="section-header__actions">
+        <button id="btn-nuovo-appuntamento" class="btn-action btn-primary" type="button">+ Nuovo appuntamento</button>
+      </div>
     </header>
     <p class="section-intro">Le lezioni di oggi e future. Le lezioni svolte o scadute passano automaticamente in Archivio a fine giornata.</p>
     <div class="filter-bar">
       <input id="filtro-appuntamenti" type="search" placeholder="Cerca cliente, istruttore o tipo" aria-label="Cerca appuntamenti" />
       <select id="filtro-appuntamenti-stato" aria-label="Filtra appuntamenti per stato">
         <option value="">Tutti gli stati</option>
-        <option value="da-fare">Da fare</option>
-        <option value="fatti">Fatti</option>
+        <option value="da-fare">Da svolgere</option>
+        <option value="fatti">Completate</option>
+        <option value="assenti">Assenti</option>
+        <option value="annullate">Annullate</option>
       </select>
       <select id="filtro-appuntamenti-periodo" aria-label="Filtra appuntamenti per periodo">
+        <option value="oggi" selected>Oggi</option>
         <option value="">Tutte le date</option>
-        <option value="oggi">Oggi</option>
         <option value="7">Prossimi 7 giorni</option>
       </select>
       <select id="filtro-appuntamenti-categoria" aria-label="Filtra appuntamenti per tipo">
@@ -148,9 +186,19 @@
       <h5 data-form-title>Modifica lezione</h5>
       <form data-form="appuntamento">
         <input type="hidden" name="id" />
-        <input type="hidden" name="clienteId" />
-        <input type="hidden" name="pacchettoId" />
         <p class="form-hint" data-appuntamento-info></p>
+        <label>
+          <span>Cliente</span>
+          <select name="clienteId" required></select>
+        </label>
+        <label>
+          <span>Cane</span>
+          <select name="caneId"></select>
+        </label>
+        <label>
+          <span>Pacchetto / lezione</span>
+          <select name="pacchettoId"></select>
+        </label>
         <label>
           <span>Data</span>
           <span class="date-field">
@@ -180,6 +228,16 @@
           <span>Istruttore</span>
           <input type="text" name="istruttore" list="istruttori-globali" maxlength="60" autocomplete="off" />
         </label>
+        <div class="esito-options" role="radiogroup" aria-label="Esito della lezione">
+          <label><input type="radio" name="esito" value="" checked /><span>Da svolgere</span></label>
+          <label><input type="radio" name="esito" value="completata" /><span>Lezione completata</span></label>
+          <label><input type="radio" name="esito" value="assente" /><span>Cliente assente</span></label>
+          <label><input type="radio" name="esito" value="annullata" /><span>Lezione annullata</span></label>
+        </div>
+        <label>
+          <span>Note (facoltative)</span>
+          <textarea name="note" rows="2" autocomplete="off"></textarea>
+        </label>
         <div class="form-actions">
           <button type="submit" class="btn-action btn-primary">Salva</button>
           <button type="button" class="btn-action" data-cancel="form-appuntamento">Annulla</button>
@@ -188,6 +246,57 @@
     </div>
     <datalist id="istruttori-globali"></datalist>
     <ul id="appuntamenti-list" class="list"></ul>
+  </main>
+
+  <!-- =========== PAGAMENTI =========== -->
+  <main id="view-pagamenti" class="view is-hidden">
+    <header class="section-header">
+      <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
+      <h2>Pagamenti</h2>
+      <div class="section-header__actions">
+        <button id="btn-nuovo-pagamento-globale" class="btn-action btn-primary" type="button">+ Registra pagamento</button>
+      </div>
+    </header>
+    <p class="section-intro">Incassi, importi da riscuotere e ultimi movimenti in un'unica vista.</p>
+    <div id="pagamenti-kpi" class="payments-kpi"></div>
+    <div id="form-pagamento-globale" class="form-panel" hidden>
+      <h3 data-form-title>Registra pagamento</h3>
+      <form data-form="incasso-globale">
+        <label>
+          <span>Cliente</span>
+          <select name="clienteId" required></select>
+        </label>
+        <label>
+          <span>Contratto / saldo</span>
+          <select name="pagamentoId" required></select>
+        </label>
+        <label>
+          <span>Importo ricevuto (€)</span>
+          <input type="number" name="importo" min="0.01" step="0.01" required />
+        </label>
+        <label>
+          <span>Data</span>
+          <span class="date-field">
+            <input type="text" name="data" inputmode="numeric" placeholder="gg/mm/aaaa" maxlength="10" autocomplete="off" data-date-input required />
+            <button type="button" class="date-picker-btn" data-date-picker aria-label="Apri calendario">
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg>
+            </button>
+          </span>
+        </label>
+        <label>
+          <span>Nota (facoltativa)</span>
+          <input type="text" name="nota" autocomplete="off" />
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="btn-action btn-primary">Salva pagamento</button>
+          <button type="button" class="btn-action" data-cancel="form-pagamento-globale">Annulla</button>
+        </div>
+      </form>
+    </div>
+    <section class="payments-recent" aria-labelledby="pagamenti-recenti-title">
+      <div class="section-subhead"><h3 id="pagamenti-recenti-title">Ultimi pagamenti</h3><button id="btn-csv-incassi-pagina" class="btn-tiny" type="button">CSV incassi</button></div>
+      <ul id="pagamenti-list" class="list"></ul>
+    </section>
   </main>
 
   <!-- =========== ARCHIVIO =========== -->
@@ -228,22 +337,29 @@
   <main id="view-resoconto" class="view is-hidden">
     <header class="section-header">
       <a href="#home" class="back-btn" data-nav="home">&larr; Torna all'inizio</a>
-      <h2>Resoconto</h2>
+      <h2>Report</h2>
       <div class="section-header__actions">
+        <a href="#archivio" class="btn-action" data-nav="archivio">Archivio</a>
         <button id="btn-esporta" class="btn-action" type="button">Esporta dati</button>
         <button id="btn-esporta-pdf" class="btn-action" type="button">Esporta PDF</button>
         <button id="btn-importa" class="btn-action" type="button">Importa dati</button>
         <input id="file-import" type="file" accept=".json,application/json" hidden />
       </div>
     </header>
-    <div class="resoconto-filters" role="group" aria-label="Filtri del resoconto">
+    <p class="section-intro">Incassi, lezioni, clienti e cani seguiti. Scegli il periodo e apri i dettagli solo quando serve.</p>
+    <div class="report-period-tabs" role="group" aria-label="Periodo del report">
+      <button type="button" class="period-tab is-active" data-report-period="month">Mese</button>
+      <button type="button" class="period-tab" data-report-period="quarter">Trimestre</button>
+      <button type="button" class="period-tab" data-report-period="year">Anno</button>
+    </div>
+    <div class="resoconto-filters" role="group" aria-label="Filtri del report">
       <label class="resoconto-filter" for="resoconto-mese">
-        <span>Mese</span>
-        <select id="resoconto-mese" aria-label="Mese di riferimento del resoconto"></select>
+        <span id="resoconto-periodo-label">Mese</span>
+        <select id="resoconto-mese" aria-label="Periodo di riferimento del report"></select>
       </label>
       <label class="resoconto-filter" for="resoconto-cliente">
         <span>Cliente</span>
-        <select id="resoconto-cliente" aria-label="Cliente del resoconto"></select>
+        <select id="resoconto-cliente" aria-label="Cliente del report"></select>
       </label>
     </div>
     <div id="resoconto" class="resoconto"></div>
@@ -258,6 +374,25 @@
       <p class="backup-panel__hint">Lo snapshot automatico conserva l'ultima versione precedente alle modifiche. Non sostituisce un backup esterno.</p>
     </section>
   </main>
+
+  <nav id="app-nav" class="app-nav" aria-label="Navigazione principale">
+    <a href="#home" class="app-nav__item" data-nav="home" data-nav-id="home">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V21h14V9.5"></path></svg>
+      <span>Home</span>
+    </a>
+    <a href="#clienti" class="app-nav__item" data-nav="clienti" data-nav-id="clienti">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path></svg>
+      <span>Clienti</span>
+    </a>
+    <a href="#pagamenti" class="app-nav__item" data-nav="pagamenti" data-nav-id="pagamenti">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2"></rect><path d="M2 10h20M6 15h4"></path></svg>
+      <span>Pagamenti</span>
+    </a>
+    <a href="#report" class="app-nav__item" data-nav="report" data-nav-id="report">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>
+      <span>Report</span>
+    </a>
+  </nav>
 
   <div id="status-bar" class="status-bar" role="status" aria-live="polite" hidden></div>
 

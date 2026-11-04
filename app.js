@@ -42,6 +42,12 @@ function str(v, max) {
   return max && s.length > max ? s.slice(0, max) : s;
 }
 
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function warn(msg) {
   normalizeWarnings.push(msg);
 }
@@ -74,19 +80,50 @@ function safeRow(row, expectedFields) {
   return out;
 }
 
+/* Cani del cliente: il vecchio singolo cane viene migrato nel primo elemento. */
+function normalizeCaniCliente(c) {
+  const source = Array.isArray(c.cani) ? c.cani : [];
+  const out = [];
+  const seen = new Set();
+  let next = 1;
+  for (const raw of source) {
+    if (!raw || typeof raw !== "object") continue;
+    const nome = str(raw.nome, 120) || str(raw.cane, 120);
+    const razza = str(raw.razza, 80);
+    const eta = str(raw.eta, 20);
+    if (!nome && !razza && !eta) continue;
+    let id = validId(raw.id) ? raw.id : 0;
+    if (!id || seen.has(id)) {
+      while (seen.has(next)) next++;
+      id = next;
+    }
+    seen.add(id);
+    next = Math.max(next, id + 1);
+    out.push({ id, nome, razza, eta });
+  }
+  if (!out.length && (c.cane || c.razza || c.eta)) {
+    out.push({ id: 1, nome: str(c.cane, 120), razza: str(c.razza, 80), eta: str(c.eta, 20) });
+  }
+  return out;
+}
+
 /* Converte un record in forma normalizzata; restituisce null se non valido. */
 function normalizeClienti(c) {
   if (!c || !validId(c.id)) { warn("clienti: riga senza id valido ignorata"); return null; }
   const stato = c.stato === "Pausa" || c.stato === "Archiviato" ? c.stato : "Attivo";
+  const cani = normalizeCaniCliente(c);
+  const primary = cani[0] || { nome: "", razza: "", eta: "" };
   return {
     id: c.id,
     nome: str(c.nome, 120),
     telefono: str(c.telefono, 40),
-    cane: str(c.cane, 120),
-    razza: str(c.razza, 80),
-    eta: str(c.eta, 20),
+    email: str(c.email, 120),
+    cane: primary.nome,
+    razza: primary.razza,
+    eta: primary.eta,
     note: str(c.note, 2000),
     stato,
+    cani,
   };
 }
 
@@ -130,15 +167,21 @@ function normalizeAppuntamento(a) {
     warn("appuntamenti: ora non valida per id " + a.id);
     ora = "00:00";
   }
+  const esito = ["completata", "assente", "annullata"].includes(a.esito)
+    ? a.esito
+    : (a.fatto === true ? "completata" : "");
   return {
     id: a.id,
     clienteId: typeof a.clienteId === "number" ? a.clienteId : 0,
+    caneId: typeof a.caneId === "number" && Number.isInteger(a.caneId) && a.caneId > 0 ? a.caneId : 0,
     data,
     ora,
     tipo: str(a.tipo, 60) || "Addestramento",
     istruttore: str(a.istruttore, 60),
     pacchettoId: typeof a.pacchettoId === "number" && Number.isInteger(a.pacchettoId) && a.pacchettoId > 0 ? a.pacchettoId : 0,
-    fatto: a.fatto === true,
+    esito,
+    note: str(a.note, 500),
+    fatto: esito === "completata",
   };
 }
 
@@ -170,6 +213,7 @@ function normalizePacchetto(p) {
     utilizzate,
     prezzo,
     data,
+    consumiManuali: Number.isInteger(p.consumiManuali) && p.consumiManuali >= 0 ? p.consumiManuali : null,
   };
 }
 
@@ -180,6 +224,12 @@ function lezioniRimanenti(pk) {
 
 function pacchettoEsaurito(pk) {
   return pk.utilizzate >= pk.lezioni;
+}
+
+/* Le assenze e gli annullamenti non occupano un posto del pacchetto. */
+function lezioniProgrammate(pk) {
+  return data.appuntamenti.filter(a => a.pacchettoId === pk.id
+    && a.esito !== "assente" && a.esito !== "annullata").length;
 }
 
 function normalizeIncasso(i) {
@@ -250,6 +300,7 @@ function normalizeData(raw) {
         id: nextId(pacchetti), clienteId: a.clienteId, categoria: "singola",
         tipo: a.tipo, istruttore: a.istruttore, lezioni: 1,
         utilizzate: a.fatto ? 1 : 0, prezzo: 0, data: a.data,
+        consumiManuali: 0,
       };
       pacchetti.push(pk);
       a.pacchettoId = pk.id;
@@ -262,6 +313,7 @@ function normalizeData(raw) {
         id: nextId(pacchetti), clienteId: p.clienteId, categoria: "singola",
         tipo: (p.descrizione || "Lezione singola").slice(0, 60), istruttore: "",
         lezioni: 1, utilizzate: 0, prezzo: p.importo, data: p.data,
+        consumiManuali: 0,
       };
       pacchetti.push(pk);
       p.pacchettoId = pk.id;
@@ -322,6 +374,20 @@ function normalizeData(raw) {
       warn("pagamenti: incassi superiori all'importo contrattuale per id " + p.id);
     }
     p.stato = statoPagamento(p, incassi);
+  }
+  // Collega ogni lezione a un cane esistente del cliente.
+  for (const a of appuntamenti) {
+    const c = clienti.find(x => x.id === a.clienteId);
+    if (!c || !c.cani.length) { a.caneId = 0; continue; }
+    if (!a.caneId || !c.cani.some(d => d.id === a.caneId)) a.caneId = c.cani[0].id;
+  }
+  // Consumi: le lezioni completate sono la fonte principale; consumiManuali
+  // conserva eventuali utilizzate storiche senza appuntamento.
+  for (const pk of pacchetti) {
+    const completate = appuntamenti.filter(a => a.pacchettoId === pk.id && a.esito === "completata").length;
+    if (pk.consumiManuali === null) pk.consumiManuali = Math.max(0, pk.utilizzate - completate);
+    pk.consumiManuali = Math.min(pk.consumiManuali, pk.lezioni);
+    pk.utilizzate = Math.min(pk.lezioni, completate + pk.consumiManuali);
   }
   return { clienti, pagamenti, appuntamenti, pacchetti, incassi };
 }
@@ -546,7 +612,7 @@ function initBanner() {
     hasStoredData = localStorage.getItem(STORAGE_KEY) !== null;
   } catch (e) { /* già gestito sopra */ }
   if (!hasStoredData && isDataEmpty(data)) {
-    showBanner("Nessun dato registrato. Aggiungi il primo cliente dalla sezione Scheda cliente.", [
+    showBanner("Nessun dato registrato. Aggiungi il primo cliente dalla sezione Clienti.", [
       { label: "Vai ai clienti", onClick: () => { hideBanner(); goTo("clienti"); } },
       { label: "Chiudi", onClick: hideBanner },
     ]);
@@ -607,6 +673,42 @@ function clienteById(id) {
 function clienteNome(id) {
   const c = clienteById(id);
   return c ? c.nome : "Sconosciuto";
+}
+
+function caneById(c, caneId) {
+  if (!c || !Array.isArray(c.cani)) return null;
+  return c.cani.find(d => d.id === caneId) || null;
+}
+
+function canePrimario(c) {
+  return c && Array.isArray(c.cani) && c.cani.length ? c.cani[0] : null;
+}
+
+function caneNome(a) {
+  const c = a ? clienteById(a.clienteId) : null;
+  const d = c ? caneById(c, a.caneId) : null;
+  return d ? (d.nome || "Cane") : (c && c.cane ? c.cane : "—");
+}
+
+function esitoLabel(a) {
+  if (!a) return "Da svolgere";
+  if (a.esito === "completata") return "Completata";
+  if (a.esito === "assente") return "Assente";
+  if (a.esito === "annullata") return "Annullata";
+  return "Da svolgere";
+}
+
+function esitoBadge(a) {
+  if (a && a.esito === "completata") return { cls: "badge--ok", txt: "Completata" };
+  if (a && a.esito === "assente") return { cls: "badge--warn", txt: "Assente" };
+  if (a && a.esito === "annullata") return { cls: "badge--neutral", txt: "Annullata" };
+  return { cls: "badge--neutral", txt: "Da svolgere" };
+}
+
+function iniziali(nome) {
+  const parts = String(nome || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
 function nextId(rows) {
@@ -718,26 +820,59 @@ function undoLast() {
 /* ===== Navigazione ===== */
 const views = document.querySelectorAll(".view");
 const VIEW_TITLES = {
-  home: "Addestramento Cinofilo",
-  clienti: "Scheda cliente · Addestramento Cinofilo",
-  appuntamenti: "Appuntamenti · Addestramento Cinofilo",
-  archivio: "Archivio · Addestramento Cinofilo",
-  resoconto: "Resoconto · Addestramento Cinofilo",
+  home: "Gestione Cinofila",
+  oggi: "Oggi · Gestione Cinofila",
+  clienti: "Clienti · Gestione Cinofila",
+  pagamenti: "Pagamenti · Gestione Cinofila",
+  report: "Report · Gestione Cinofila",
+  archivio: "Archivio · Gestione Cinofila",
 };
+const VIEW_ELEMENTS = {
+  home: "home",
+  oggi: "appuntamenti",
+  clienti: "clienti",
+  pagamenti: "pagamenti",
+  report: "resoconto",
+  archivio: "archivio",
+};
+
+function updateAppNav(id) {
+  const activeId = id === "oggi" ? "home" : id;
+  for (const item of document.querySelectorAll(".app-nav__item")) {
+    const active = item.dataset.navId === activeId;
+    item.classList.toggle("is-active", active);
+    if (active) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  }
+}
+
 function showView(id) {
-  const target = "view-" + id;
+  const element = VIEW_ELEMENTS[id] || id;
+  const target = "view-" + element;
   for (const v of views) {
     v.classList.toggle("is-hidden", v.id !== target);
   }
   document.title = VIEW_TITLES[id] || VIEW_TITLES.home;
+  updateAppNav(id);
   window.scrollTo(0, 0);
 }
 
 document.addEventListener("click", (e) => {
   const link = e.target.closest("a[data-nav]");
-  if (!link) return;
-  e.preventDefault();
-  goTo(link.dataset.nav);
+  if (link) {
+    e.preventDefault();
+    goTo(link.dataset.nav);
+    return;
+  }
+  const periodTab = e.target.closest("[data-report-period]");
+  if (periodTab) {
+    reportPeriodMode = periodTab.dataset.reportPeriod;
+    for (const tab of document.querySelectorAll("[data-report-period]")) {
+      tab.classList.toggle("is-active", tab === periodTab);
+    }
+    fillPeriodSelect();
+    renderResoconto();
+  }
 });
 
 const FILTER_RENDERERS = {
@@ -785,6 +920,32 @@ if (datePickerHelper) {
     if (current) current.focus();
   });
 }
+
+document.addEventListener("change", (e) => {
+  if (e.target.matches('#form-appuntamento select[name="clienteId"]')) {
+    const form = e.target.closest("form");
+    fillAppuntamentoCani(form, e.target.value, 0);
+    fillAppuntamentoPacchetti(form, e.target.value, 0);
+  }
+  if (e.target.matches('#form-pagamento-globale select[name="clienteId"]')) {
+    const form = e.target.closest("form");
+    const pay = form.elements.namedItem("pagamentoId");
+    const contratti = data.pagamenti.filter(p => p.clienteId === Number(e.target.value)
+      && (p.incassoDaVerificare || saldoPagamento(p) > 0));
+    fillSelect(pay, contratti.map(p => ({
+      value: p.id,
+      label: (p.descrizione || "Contratto") + " · saldo " + money(saldoPagamento(p)),
+    })), contratti[0] ? contratti[0].id : "", contratti.length ? "" : "Nessun contratto aperto");
+    const amount = form.elements.namedItem("importo");
+    if (amount) amount.value = contratti[0] ? String(saldoPagamento(contratti[0])) : "";
+  }
+  if (e.target.matches('#form-pagamento-globale select[name="pagamentoId"]')) {
+    const form = e.target.closest("form");
+    const p = data.pagamenti.find(x => x.id === Number(e.target.value));
+    const amount = form.elements.namedItem("importo");
+    if (p && amount) amount.value = String(saldoPagamento(p));
+  }
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
@@ -834,8 +995,8 @@ function hashView() {
 
 /* Viste ammissibili; tutte le transizioni attraversano goTo().
    Le vecchie viste autonome convivono solo come alias della scheda cliente. */
-const KNOWN_VIEWS = ["home", "clienti", "appuntamenti", "archivio", "resoconto"];
-const LEGACY_VIEWS = { pagamenti: "clienti", pacchetti: "clienti" };
+const KNOWN_VIEWS = ["home", "oggi", "clienti", "pagamenti", "report", "archivio"];
+const LEGACY_VIEWS = { appuntamenti: "oggi", resoconto: "report", pacchetti: "clienti" };
 
 function goTo(view) {
   // Le vecchie sezioni ora vivono dentro la scheda cliente.
@@ -910,6 +1071,7 @@ function matchesText(query, ...fields) {
 
 /* ===== Render clienti e archivio ===== */
 let selectedClienteId = 0;
+let selectedCaneId = 0;
 let detailTriggerId = 0;
 let selectedArchivioId = 0;
 let archivioTriggerId = 0;
@@ -977,8 +1139,8 @@ function pacchettoDeletionPlan(id) {
   const pagamentoIds = new Set(pagamenti.map(p => p.id));
   const incassi = data.incassi.filter(i => pagamentoIds.has(i.pagamentoId));
   const appuntamenti = data.appuntamenti.filter(a => a.pacchettoId === id);
-  const appuntamentiDaEliminare = appuntamenti.filter(a => !a.fatto);
-  const appuntamentiSvolti = appuntamenti.filter(a => a.fatto);
+  const appuntamentiDaEliminare = appuntamenti.filter(a => !a.esito);
+  const appuntamentiSvolti = appuntamenti.filter(a => a.esito);
   const warnings = [];
   if (!pagamenti.length) {
     warnings.push("Nessun pagamento collegato a questo pacchetto.");
@@ -987,7 +1149,7 @@ function pacchettoDeletionPlan(id) {
     warnings.push("Sono presenti " + pagamenti.length + " pagamenti collegati allo stesso pacchetto: verranno eliminati tutti.");
   }
   if (appuntamentiSvolti.length) {
-    warnings.push(countLabel(appuntamentiSvolti.length, "appuntamento svolto resterà", "appuntamenti svolti resteranno")
+    warnings.push(countLabel(appuntamentiSvolti.length, "lezione registrata resterà", "lezioni registrate resteranno")
       + " nello storico senza collegamento al pacchetto.");
   }
   const saldo = pagamenti.reduce((s, p) => s + (p.incassoDaVerificare ? 0 : saldoPagamento(p)), 0);
@@ -1193,6 +1355,10 @@ function appuntamentoFormHtml(clienteId) {
         <input type="hidden" name="clienteId" value="${clienteId}" />
         <input type="hidden" name="pacchettoId" value="0" />
         <label>
+          <span>Cane</span>
+          <select name="caneId"></select>
+        </label>
+        <label>
           <span>Data</span>
           ${dateFieldHtml('name="data" required')}
         </label>
@@ -1212,6 +1378,16 @@ function appuntamentoFormHtml(clienteId) {
         <label>
           <span>Istruttore</span>
           <input type="text" name="istruttore" list="istruttori-suggeriti" maxlength="60" autocomplete="off" />
+        </label>
+        <div class="esito-options" role="radiogroup" aria-label="Esito della lezione">
+          <label><input type="radio" name="esito" value="" checked /><span>Da svolgere</span></label>
+          <label><input type="radio" name="esito" value="completata" /><span>Lezione completata</span></label>
+          <label><input type="radio" name="esito" value="assente" /><span>Cliente assente</span></label>
+          <label><input type="radio" name="esito" value="annullata" /><span>Lezione annullata</span></label>
+        </div>
+        <label>
+          <span>Note (facoltative)</span>
+          <textarea name="note" rows="2" autocomplete="off"></textarea>
         </label>
         <div class="form-actions">
           <button type="submit" class="btn-action btn-primary">Salva</button>
@@ -1590,7 +1766,7 @@ function renderPaymentBlock(block, pk) {
 function renderCalendarBlock(block, pk) {
   const apps = data.appuntamenti.filter(a => a.pacchettoId === pk.id)
     .sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora) || a.id - b.id);
-  const canAdd = apps.length < pk.lezioni;
+  const canAdd = lezioniProgrammate(pk) < pk.lezioni;
   block.innerHTML = `<div class="date-list" data-calendar-rows></div>
     <div class="lezione-block__actions">
       ${canAdd ? `<button type="button" class="btn-small" data-action="nuova-lezione" data-pacchetto-id="${pk.id}">+ Aggiungi lezione</button>` : ""}
@@ -1616,7 +1792,7 @@ function renderCalendarBlock(block, pk) {
     row.querySelector(".calendar-row__date").textContent =
       (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora;
     row.querySelector(".calendar-row__meta").textContent =
-      (a.istruttore || pk.istruttore || "—") + " · " + a.tipo + " · " + (a.fatto ? "Fatto" : "Da fare");
+      caneNome(a) + " · " + (a.istruttore || pk.istruttore || "—") + " · " + a.tipo + " · " + esitoLabel(a);
     list.appendChild(row);
   }
 }
@@ -1724,10 +1900,10 @@ function renderClienteStorico(box, links) {
   for (const a of [...links.appuntamenti].sort((x, y) => (x.data + x.ora).localeCompare(y.data + y.ora))) {
     const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
     detailRow(appBox,
-      isoToDateLabel(a.data) + " · " + a.ora + " · " + a.tipo +
+      isoToDateLabel(a.data) + " · " + a.ora + " · " + caneNome(a) + " · " + a.tipo +
         (a.istruttore ? " · " + a.istruttore : "") +
         (pk ? " · " + lezioneLabel(pk) : ""),
-      a.fatto ? "Fatto" : "Da fare");
+      esitoLabel(a) + (a.note ? " · " + a.note : ""));
   }
 }
 
@@ -1842,42 +2018,122 @@ function renderClienteDettaglioInto(boxId, clienteId) {
     return;
   }
   box.hidden = false;
+  if (box.dataset.clienteId !== String(clienteId)) selectedCaneId = 0;
   box.dataset.clienteId = String(clienteId);
+  if (selectedCaneId && !(c.cani || []).some(d => d.id === selectedCaneId)) selectedCaneId = 0;
   const closeAction = boxId === "archivio-dettaglio" ? "chiudi-dettaglio-archivio" : "chiudi-dettaglio";
-  box.innerHTML = `
-    <div class="detail-panel__head">
-      <h3 id="${boxId}-title" data-detail-title></h3>
-      <button type="button" class="btn-small" data-action="${closeAction}">Chiudi</button>
-    </div>
-    <div class="detail-panel__meta" data-detail-meta></div>
-    <div class="detail-panel__totals" data-detail-totals></div>`;
-  box.querySelector("[data-detail-title]").textContent = c.nome;
-  const meta = ["Cane: " + (c.cane || "—")];
-  if (c.razza) meta.push("Razza: " + c.razza);
-  if (c.eta) meta.push("Età: " + c.eta + " anni");
-  if (c.telefono) meta.push("Tel: " + c.telefono);
-  meta.push("Stato: " + (c.stato || "Attivo"));
-  box.querySelector("[data-detail-meta]").textContent = meta.join("  ·  ");
-
+  const cani = Array.isArray(c.cani) ? c.cani : [];
   const links = clientLinks(c.id);
   const contratti = links.pagamenti.reduce((s, p) => s + p.importo, 0);
   const incassato = links.pagamenti.reduce((s, p) => s + totaleIncassi(p.id), 0);
   const saldo = links.pagamenti.reduce((s, p) => s + saldoPagamento(p), 0);
   const daVerificare = links.pagamenti.filter(p => p.incassoDaVerificare).length;
-  const fatti = links.appuntamenti.filter(a => a.fatto).length;
+  const completate = links.appuntamenti.filter(a => a.esito === "completata").length;
   const rimanenti = links.pacchetti.reduce((s, pk) => s + Math.max(0, pk.lezioni - pk.utilizzate), 0);
+  const caneCards = cani.map(d => {
+    const lezioni = links.appuntamenti.filter(a => a.caneId === d.id).length;
+    return `<article class="cane-card">
+      <div class="cane-card__main">
+        <strong>${escapeHtml(d.nome || "Cane")}</strong>
+        <span>${escapeHtml([d.razza, d.eta ? d.eta + " anni" : ""].filter(Boolean).join(" · ") || "Dati facoltativi")}</span>
+        <small>${countLabel(lezioni, "lezione", "lezioni")}</small>
+      </div>
+      <div class="cane-card__actions">
+        <button type="button" class="btn-tiny" data-action="scheda-cane" data-cane-id="${d.id}">Scheda</button>
+        <button type="button" class="btn-tiny" data-action="modifica-cane" data-cane-id="${d.id}">Modifica</button>
+      </div>
+    </article>`;
+  }).join("");
+  box.innerHTML = `
+    <div class="client-detail__head">
+      <span class="avatar avatar--large" aria-hidden="true">${escapeHtml(iniziali(c.nome))}</span>
+      <div class="client-detail__identity">
+        <h3 id="${boxId}-title" data-detail-title></h3>
+        <p class="client-detail__contact" data-detail-meta></p>
+      </div>
+      <button type="button" class="btn-small" data-action="${closeAction}">Chiudi</button>
+    </div>
+    <div class="detail-panel__totals" data-detail-totals></div>
+    ${boxId === "archivio-dettaglio" ? "" : `<section class="client-dogs" aria-label="Cani del cliente">
+      <div class="section-subhead"><h4>Cani</h4><button type="button" class="btn-action btn-small" data-action="nuovo-cane">+ Aggiungi cane</button></div>
+      <div class="cane-grid">${caneCards || '<p class="empty-inline">Nessun cane registrato.</p>'}</div>
+      <div id="form-cliente-cane" class="form-panel" hidden>
+        <h5 data-form-title>Cane</h5>
+        <form data-form="cane">
+          <input type="hidden" name="clienteId" value="${c.id}" />
+          <input type="hidden" name="caneId" />
+          <label><span>Nome</span><input type="text" name="nome" required autocomplete="off" /></label>
+          <label><span>Razza (facoltativa)</span><input type="text" name="razza" autocomplete="off" /></label>
+          <label><span>Età (facoltativa)</span><input type="text" name="eta" autocomplete="off" /></label>
+          <div class="form-actions">
+            <button type="submit" class="btn-action btn-primary">Salva cane</button>
+            <button type="button" class="btn-action" data-cancel="form-cliente-cane">Annulla</button>
+          </div>
+        </form>
+      </div>
+      <div id="cliente-cane-dettaglio" class="cane-detail" hidden></div>
+    </section>
+    <div class="client-actions">
+      <button type="button" class="action-btn action-btn--blue" data-action="nuova-lezione-cliente">Nuova lezione</button>
+      <button type="button" class="action-btn action-btn--green" data-action="registra-pagamento-cliente">Registra pagamento</button>
+      <button type="button" class="action-btn action-btn--grey" data-action="toggle-storico-cliente">Storico</button>
+    </div>
+    <div id="cliente-storico-panel" class="client-history" hidden></div>
+    <details id="cliente-attivita" class="client-activity" open>
+      <summary>Pacchetti, lezioni e pagamenti</summary>
+      <div data-attivita-body></div>
+    </details>`}`;
+  box.querySelector("[data-detail-title]").textContent = c.nome;
+  const meta = [];
+  if (c.telefono) meta.push("Tel: " + c.telefono);
+  if (c.email) meta.push(c.email);
+  if (cani.length) meta.push((cani.length === 1 ? "Cane: " : "Cani: ") + cani.map(d => d.nome).filter(Boolean).join(", "));
+  meta.push("Stato: " + (c.stato || "Attivo"));
+  box.querySelector("[data-detail-meta]").textContent = meta.join(" · ");
   box.querySelector("[data-detail-totals]").textContent =
-    "Contratti: " + money(contratti) + "  ·  Incassato: " + money(incassato)
-    + "  ·  Saldo: " + money(saldo)
-    + (daVerificare ? "  ·  Da verificare: " + daVerificare : "")
-    + "  ·  Appuntamenti: " + links.appuntamenti.length + " (" + fatti + " fatti)"
-    + "  ·  Lezioni rimaste: " + rimanenti;
+    "Contratti: " + money(contratti) + " · Pacchetti: " + links.pacchetti.length + " · Lezioni completate: " + completate
+    + " · Lezioni rimaste: " + rimanenti + " · Incassato: " + money(incassato)
+    + " · Saldo: " + money(saldo)
+    + (daVerificare ? " · Da verificare: " + daVerificare : "");
 
   if (boxId === "archivio-dettaglio") renderClienteStorico(box, links);
   else {
-    renderClienteGestione(box, c);
+    const activityBody = box.querySelector("[data-attivita-body]");
+    renderClienteGestione(activityBody || box, c);
     restoreOpenCardForms(box, formSnapshot);
+    renderCaneDettaglio(box, c);
   }
+}
+
+function renderCaneDettaglio(box, c) {
+  const el = box ? box.querySelector("#cliente-cane-dettaglio") : null;
+  if (!el) return;
+  const dog = caneById(c, selectedCaneId);
+  if (!dog) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  const apps = data.appuntamenti.filter(a => a.clienteId === c.id && a.caneId === dog.id)
+    .sort((a, b) => (b.data + b.ora).localeCompare(a.data + a.ora) || b.id - a.id);
+  const completate = apps.filter(a => a.esito === "completata").length;
+  el.hidden = false;
+  el.innerHTML = `
+    <div class="section-subhead">
+      <h4>${escapeHtml(dog.nome || "Cane")}</h4>
+      <button type="button" class="btn-tiny" data-action="chiudi-cane">Chiudi</button>
+    </div>
+    <p class="cane-detail__meta">${escapeHtml([dog.razza, dog.eta ? dog.eta + " anni" : ""].filter(Boolean).join(" · ") || "Dati facoltativi")}</p>
+    <p class="cane-detail__stats">${countLabel(apps.length, "lezione", "lezioni")} · ${completate} completate</p>
+    <div class="cane-detail__list">${apps.length ? apps.map(a => {
+      const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
+      return `<div class="cane-lesson-row">
+        <span>${a.data ? isoToDateLabel(a.data) : "Data non valida"} · ${escapeHtml(a.ora || "—")}</span>
+        <strong>${escapeHtml(a.tipo || "Lezione")}</strong>
+        <span class="badge ${esitoBadge(a).cls}">${esitoBadge(a).txt}</span>
+        <small>${escapeHtml(pk ? lezioneLabel(pk) : "Senza lezione")}</small>
+      </div>`;
+    }).join("") : '<p class="empty-inline">Nessuna lezione per questo cane.</p>'}</div>`;
 }
 
 function renderClienteDettaglio() {
@@ -1969,15 +2225,26 @@ function renderOrfani() {
 
 /* Compila la riga anagrafica condivisa da Clienti e Archivio. */
 function fillClienteRow(li, c) {
+  const cani = Array.isArray(c.cani) ? c.cani : [];
+  const links = clientLinks(c.id);
+  const rimanenti = links.pacchetti.reduce((sum, pk) => sum + lezioniRimanenti(pk), 0);
+  const saldo = links.pagamenti.reduce((sum, p) => sum + saldoPagamento(p), 0);
+  const avatar = li.querySelector(".avatar");
+  if (avatar) avatar.textContent = iniziali(c.nome);
   li.querySelector(".list-item__title").textContent = c.nome;
   li.querySelector(".badge").textContent = c.stato || "Attivo";
-  li.querySelector(".list-item__meta").textContent = "Tel: " + (c.telefono || "—");
-  // Cane + dettagli facoltativi (razza, età, note): mostrati solo se non vuoti.
-  const parts = ["Cane: " + (c.cane || "—")];
-  if (c.razza) parts.push("Razza: " + c.razza);
-  if (c.eta) parts.push("Età: " + c.eta + " anni");
+  const contacts = [];
+  if (c.telefono) contacts.push(c.telefono);
+  if (c.email) contacts.push(c.email);
+  li.querySelector(".list-item__meta").textContent =
+    (contacts.join(" · ") || "Nessun contatto") + " · " +
+    (cani.length ? cani.map(d => d.nome).join(", ") : "Nessun cane");
+  const parts = [countLabel(cani.length, "cane", "cani")];
+  parts.push(countLabel(rimanenti, "lezione rimasta", "lezioni rimaste"));
+  if (saldo > 0) parts.push("Saldo " + money(saldo));
+  else parts.push("Nessun saldo aperto");
   if (c.note) parts.push(c.note);
-  li.querySelector(".list-item__note").textContent = parts.join("  ·  ");
+  li.querySelector(".list-item__note").textContent = parts.join(" · ");
 }
 
 function renderClienti(skipDetail) {
@@ -1993,21 +2260,26 @@ function renderClienti(skipDetail) {
   const attivi = data.clienti.filter(c => c.stato !== "Archiviato");
   const sorted = attivi.filter(c => {
     if (statoFiltro && c.stato !== statoFiltro) return false;
-    return matchesText(query, c.nome, c.cane, c.telefono, c.razza, c.eta, c.note);
+    const cani = Array.isArray(c.cani) ? c.cani : [];
+    return matchesText(query, c.nome, c.cane, c.telefono, c.email, c.note,
+      ...cani.flatMap(d => [d.nome, d.razza, d.eta]));
   }).sort((a, b) => a.nome.localeCompare(b.nome, "it"));
   for (const c of sorted) {
     const li = document.createElement("li");
-    li.className = "list-item";
+    li.className = "list-item is-clickable";
     li.dataset.id = c.id;
     li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge badge--${badgeKind(c.stato)}"></span>
+      <div class="list-item__head client-row__head">
+        <span class="avatar" aria-hidden="true"></span>
+        <div class="client-row__identity">
+          <span class="list-item__title"></span>
+          <span class="badge badge--${badgeKind(c.stato)}"></span>
+        </div>
       </div>
       <div class="list-item__meta"></div>
       <div class="list-item__note"></div>
       <div class="list-item__actions">
-        <button type="button" class="btn-small" data-action="scheda-cliente">Scheda</button>
+        <button type="button" class="btn-small btn-primary" data-action="scheda-cliente">Apri scheda</button>
         <button type="button" class="btn-small" data-action="modifica-cliente">Modifica</button>
         <button type="button" class="btn-small" data-action="archivia-cliente">Archivia</button>
         <button type="button" class="btn-small btn-small--danger" data-action="elimina-cliente">Elimina</button>
@@ -2049,8 +2321,8 @@ function renderArchivioLezioni() {
   const all = lezioniArchiviate();
   const rows = all.filter(a => {
     const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
-    return matchesText(query, clienteNome(a.clienteId), istruttoreAppuntamento(a), a.tipo,
-      isoToDateLabel(a.data), pk ? lezioneLabel(pk) : "");
+    return matchesText(query, clienteNome(a.clienteId), caneNome(a), istruttoreAppuntamento(a), a.tipo,
+      esitoLabel(a), isoToDateLabel(a.data), pk ? lezioneLabel(pk) : "");
   });
   ul.innerHTML = "";
   let lastDate = null;
@@ -2073,16 +2345,17 @@ function renderArchivioLezioni() {
     li.innerHTML = `
       <div class="list-item__head">
         <span class="list-item__title"></span>
-        <span class="badge ${a.fatto ? "badge--ok" : "badge--neutral"}"></span>
+        <span class="badge ${esitoBadge(a).cls}"></span>
       </div>
       <div class="list-item__meta"></div>
       <div class="list-item__note"></div>`;
     li.querySelector(".list-item__title").textContent =
       clienteNome(a.clienteId) + " · " + (a.ora || "—");
-    li.querySelector(".badge").textContent = a.fatto ? "Fatto" : "Scaduta";
+    li.querySelector(".badge").textContent = esitoBadge(a).txt;
     li.querySelector(".list-item__meta").textContent =
-      "Istruttore: " + (istruttoreAppuntamento(a) || "—") + " · Tipo: " + (a.tipo || "—");
-    li.querySelector(".list-item__note").textContent = pk ? lezioneLabel(pk) : "Senza lezione";
+      "Cane: " + caneNome(a) + " · Istruttore: " + (istruttoreAppuntamento(a) || "—") + " · Tipo: " + (a.tipo || "—");
+    li.querySelector(".list-item__note").textContent =
+      (pk ? lezioneLabel(pk) : "Senza lezione") + (a.note ? " · " + a.note : "");
     ul.appendChild(li);
   }
   if (!rows.length) {
@@ -2107,16 +2380,20 @@ function renderArchivio(skipDetail) {
   const query = filterValue("filtro-archivio");
   const archiviati = data.clienti.filter(c => c.stato === "Archiviato");
   const sorted = archiviati
-    .filter(c => matchesText(query, c.nome, c.cane, c.telefono, c.razza, c.eta, c.note))
+    .filter(c => matchesText(query, c.nome, c.cane, c.telefono, c.email, c.razza, c.eta, c.note,
+      ...(Array.isArray(c.cani) ? c.cani.flatMap(d => [d.nome, d.razza, d.eta]) : [])))
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
   for (const c of sorted) {
     const li = document.createElement("li");
     li.className = "list-item is-archived";
     li.dataset.id = c.id;
     li.innerHTML = `
-      <div class="list-item__head">
-        <span class="list-item__title"></span>
-        <span class="badge badge--neutral"></span>
+      <div class="list-item__head client-row__head">
+        <span class="avatar" aria-hidden="true"></span>
+        <div class="client-row__identity">
+          <span class="list-item__title"></span>
+          <span class="badge badge--neutral"></span>
+        </div>
       </div>
       <div class="list-item__meta"></div>
       <div class="list-item__note"></div>
@@ -2163,15 +2440,17 @@ function renderAppuntamenti() {
   const rows = data.appuntamenti.filter(a => {
     if (!a.clienteId || !clienteById(a.clienteId)) return false;
     if (a.data && a.data < today) return false;
-    if (stato === "fatti" && !a.fatto) return false;
-    if (stato === "da-fare" && a.fatto) return false;
+    if (stato === "fatti" && a.esito !== "completata") return false;
+    if (stato === "da-fare" && a.esito) return false;
+    if (stato === "assenti" && a.esito !== "assente") return false;
+    if (stato === "annullate" && a.esito !== "annullata") return false;
     if (periodo === "oggi" && a.data !== today) return false;
     if (periodo === "7" && (a.data < today || a.data > end)) return false;
     const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
     if (categoria === "pacchetto" && (!pk || pk.categoria === "singola")) return false;
     if (categoria === "singola" && (!pk || pk.categoria !== "singola")) return false;
-    return matchesText(query, clienteNome(a.clienteId), a.istruttore, a.tipo,
-      a.data, isoToDateLabel(a.data), a.ora, pk ? lezioneLabel(pk) : "");
+    return matchesText(query, clienteNome(a.clienteId), caneNome(a), a.istruttore, a.tipo,
+      esitoLabel(a), a.data, isoToDateLabel(a.data), a.ora, pk ? lezioneLabel(pk) : "");
   }).sort((a, b) => (a.data + a.ora).localeCompare(b.data + b.ora) || a.id - b.id);
 
   ul.innerHTML = "";
@@ -2189,35 +2468,36 @@ function renderAppuntamenti() {
     }
     const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
     const li = document.createElement("li");
-    li.className = "list-item";
+    li.className = "list-item is-clickable";
     li.dataset.id = a.id;
     li.dataset.clienteId = a.clienteId;
     li.innerHTML = `
       <div class="list-item__head">
         <span class="list-item__title"></span>
-        <span class="badge ${a.fatto ? "badge--ok" : "badge--neutral"}"></span>
+        <span class="badge ${esitoBadge(a).cls}"></span>
       </div>
       <div class="list-item__meta"></div>
       <div class="list-item__actions">
         <button type="button" class="btn-small" data-action="modifica-appuntamento">Modifica</button>
-        ${!a.fatto ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna fatto</button>' : ""}
+        ${a.esito !== "completata" ? '<button type="button" class="btn-small" data-action="segna-fatto">Segna completata</button>' : ""}
         <button type="button" class="btn-small" data-action="vai-cliente" data-cliente-id="${a.clienteId}">Scheda cliente</button>
         <button type="button" class="btn-small btn-small--danger" data-action="elimina-appuntamento">Elimina</button>
       </div>`;
     li.querySelector(".list-item__title").textContent =
-      (a.data ? isoToDateLabel(a.data) : "Data non valida") + " · " + a.ora + " · " + clienteNome(a.clienteId);
-    li.querySelector(".badge").textContent = a.fatto ? "Fatto" : "Da fare";
+      (a.ora || "—") + " · " + clienteNome(a.clienteId);
+    li.querySelector(".badge").textContent = esitoBadge(a).txt;
     li.querySelector(".list-item__meta").textContent =
-      "Istruttore: " + (a.istruttore || "—") + " · Tipo: " + a.tipo +
-      (pk ? " · " + lezioneLabel(pk) : " · Senza lezione");
+      "Cane: " + caneNome(a) + " · " + a.tipo;
     ul.appendChild(li);
   }
   if (!rows.length) {
     const li = document.createElement("li");
     li.className = "list-empty";
-    li.textContent = data.appuntamenti.length
-      ? "Nessuna lezione corrisponde ai filtri."
-      : "Nessuna lezione programmata.";
+    li.textContent = periodo === "oggi"
+      ? "Nessuna lezione oggi."
+      : (data.appuntamenti.length
+        ? "Nessuna lezione corrisponde ai filtri."
+        : "Nessuna lezione programmata.");
     ul.appendChild(li);
   }
   const istruttori = new Set();
@@ -2225,6 +2505,92 @@ function renderAppuntamenti() {
   for (const a of data.appuntamenti) if (a.istruttore) istruttori.add(a.istruttore);
   fillDatalist(document.getElementById("istruttori-globali"),
     [...istruttori].sort((a, b) => a.localeCompare(b, "it")));
+}
+
+function renderHome() {
+  const today = todayStr();
+  const oggi = data.appuntamenti.filter(a => a.data === today);
+  const attivi = data.clienti.filter(c => c.stato !== "Archiviato");
+  const cani = attivi.reduce((n, c) => n + (Array.isArray(c.cani) ? c.cani.length : (c.cane ? 1 : 0)), 0);
+  const daIncassare = data.pagamenti.reduce((sum, p) => {
+    if (p.incassoDaVerificare) return sum;
+    return sum + Math.max(0, creditoPagamentoAl(p, today));
+  }, 0);
+  const mese = currentMonth();
+  const completateMese = data.appuntamenti.filter(a => a.esito === "completata"
+    && a.data >= mese.first && a.data <= mese.last).length;
+  const hOggi = document.getElementById("home-oggi-hint");
+  const hClienti = document.getElementById("home-clienti-hint");
+  const hPagamenti = document.getElementById("home-pagamenti-hint");
+  const hReport = document.getElementById("home-report-hint");
+  if (hOggi) hOggi.textContent = oggi.length
+    ? countLabel(oggi.length, "lezione oggi", "lezioni oggi")
+    : "Nessuna lezione oggi";
+  if (hClienti) hClienti.textContent = countLabel(attivi.length, "cliente attivo", "clienti attivi")
+    + " · " + countLabel(cani, "cane", "cani");
+  if (hPagamenti) hPagamenti.textContent = daIncassare > 0
+    ? "Da incassare " + money(daIncassare)
+    : "Nessun importo aperto";
+  if (hReport) hReport.textContent = countLabel(completateMese, "lezione completata", "lezioni completate")
+    + " questo mese";
+}
+
+function renderPagamenti() {
+  const kpi = document.getElementById("pagamenti-kpi");
+  if (!kpi) return;
+  const mese = currentMonth();
+  const incassi = incassiPeriodo(mese, 0);
+  const incassato = incassi.reduce((s, i) => s + i.importo, 0);
+  const daIncassare = data.pagamenti.reduce((sum, p) => {
+    if (p.incassoDaVerificare) return sum;
+    return sum + Math.max(0, creditoPagamentoAl(p, todayStr()));
+  }, 0);
+  kpi.innerHTML = `
+    <article class="payment-kpi payment-kpi--green"><span>Incassato nel mese</span><strong>${escapeHtml(money(incassato))}</strong></article>
+    <article class="payment-kpi payment-kpi--orange"><span>Da incassare</span><strong>${escapeHtml(money(daIncassare))}</strong></article>
+    <article class="payment-kpi payment-kpi--blue"><span>Pagamenti ricevuti</span><strong>${incassi.length}</strong></article>`;
+
+  const list = document.getElementById("pagamenti-list");
+  if (!list) return;
+  list.innerHTML = "";
+  const recent = [...(data.incassi || [])].sort((a, b) => (b.data + String(b.id).padStart(6, "0"))
+    .localeCompare(a.data + String(a.id).padStart(6, "0"))).slice(0, 10);
+  for (const i of recent) {
+    const p = data.pagamenti.find(x => x.id === i.pagamentoId);
+    const cid = p ? p.clienteId : 0;
+    const li = document.createElement("li");
+    li.className = "list-item payment-row";
+    li.innerHTML = `
+      <span class="avatar" aria-hidden="true"></span>
+      <div class="payment-row__main">
+        <strong></strong>
+        <span></span>
+      </div>
+      <strong class="payment-row__amount"></strong>`;
+    li.querySelector(".avatar").textContent = iniziali(clienteNome(cid));
+    li.querySelector(".payment-row__main strong").textContent = clienteNome(cid);
+    li.querySelector(".payment-row__main span").textContent =
+      (i.data ? isoToDateLabel(i.data) : "Data non valida") + (i.nota ? " · " + i.nota : "");
+    li.querySelector(".payment-row__amount").textContent = money(i.importo);
+    list.appendChild(li);
+  }
+  if (!recent.length) list.appendChild(emptyState("Nessun pagamento registrato."));
+
+  const form = document.querySelector("#form-pagamento-globale form");
+  if (!form) return;
+  const clientSel = form.elements.namedItem("clienteId");
+  const paySel = form.elements.namedItem("pagamentoId");
+  const currentClient = clientSel.value;
+  const clientsWithPayments = data.clienti.filter(c => data.pagamenti.some(p => p.clienteId === c.id))
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"));
+  fillSelect(clientSel, clientsWithPayments.map(c => ({ value: c.id, label: c.nome })), currentClient, "Seleziona cliente");
+  const cid = Number(clientSel.value);
+  const contratti = data.pagamenti.filter(p => p.clienteId === cid
+    && (p.incassoDaVerificare || saldoPagamento(p) > 0));
+  fillSelect(paySel, contratti.map(p => ({
+    value: p.id,
+    label: (p.descrizione || "Contratto") + " · saldo " + money(saldoPagamento(p)),
+  })), paySel.value, contratti.length ? "" : "Nessun contratto aperto");
 }
 
 function badgeKind(stato) {
@@ -2269,12 +2635,37 @@ function recentMonths(n) {
   return out;
 }
 
+let reportPeriodMode = "month";
+
+function quarterRange(year, quarter) {
+  const q = Math.min(4, Math.max(1, Number(quarter) || 1));
+  const startMonth = (q - 1) * 3 + 1;
+  const endMonth = startMonth + 2;
+  const first = year + "-" + String(startMonth).padStart(2, "0") + "-01";
+  const last = year + "-" + String(endMonth).padStart(2, "0") + "-" + String(new Date(year, endMonth, 0).getDate()).padStart(2, "0");
+  return { first, last, label: "Q" + q + " " + year, mode: "quarter" };
+}
+
+function yearRange(year) {
+  return { first: year + "-01-01", last: year + "-12-31", label: String(year), mode: "year" };
+}
+
 function selectedMonth() {
   const sel = document.getElementById("resoconto-mese");
   const val = sel ? sel.value : "";
+  if (reportPeriodMode === "quarter") {
+    const m = /^(\d{4})-Q([1-4])$/.exec(val);
+    if (m) return quarterRange(Number(m[1]), Number(m[2]));
+    return quarterRange(new Date().getFullYear(), Math.floor(new Date().getMonth() / 3) + 1);
+  }
+  if (reportPeriodMode === "year") {
+    const m = /^(\d{4})$/.exec(val);
+    if (m) return yearRange(Number(m[1]));
+    return yearRange(new Date().getFullYear());
+  }
   const [y, m] = val.split("-").map(Number);
   if (!y || !m) return currentMonth();
-  return periodRange(y, m);
+  return { ...periodRange(y, m), mode: "month" };
 }
 
 function selectedReportClient() {
@@ -2361,20 +2752,51 @@ function pagamentiDaVerificareAl(last, clienteId) {
   );
 }
 
-function fillMonthSelect() {
+function recentQuarters(n) {
+  const now = new Date();
+  let year = now.getFullYear();
+  let quarter = Math.floor(now.getMonth() / 3) + 1;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push(year + "-Q" + quarter);
+    quarter--;
+    if (quarter < 1) { quarter = 4; year--; }
+  }
+  return out;
+}
+
+function fillPeriodSelect() {
   const sel = document.getElementById("resoconto-mese");
   if (!sel) return;
-  if (sel._filled) return;
-  sel._filled = true;
-  for (const ym of recentMonths(12)) {
-    const [y, m] = ym.split("-").map(Number);
+  const current = sel.value;
+  if (sel.dataset.signature === reportPeriodMode) return;
+  const options = [];
+  if (reportPeriodMode === "quarter") {
+    for (const q of recentQuarters(12)) {
+      const [y, qn] = q.split("-Q");
+      options.push({ value: q, label: "Q" + qn + " " + y });
+    }
+  } else if (reportPeriodMode === "year") {
+    const year = new Date().getFullYear();
+    for (let i = 0; i < 6; i++) options.push({ value: String(year - i), label: String(year - i) });
+  } else {
+    for (const ym of recentMonths(12)) {
+      const [y, m] = ym.split("-").map(Number);
+      options.push({ value: ym, label: periodRange(y, m).label });
+    }
+  }
+  const valid = options.some(o => o.value === current);
+  sel.innerHTML = "";
+  for (const o of options) {
     const opt = document.createElement("option");
-    opt.value = ym;
-    opt.textContent = periodRange(y, m).label;
+    opt.value = o.value;
+    opt.textContent = o.label;
     sel.appendChild(opt);
   }
-  const def = recentMonths(1)[0];
-  sel.value = def;
+  sel.value = valid ? current : options[0].value;
+  sel.dataset.signature = reportPeriodMode;
+  const label = document.getElementById("resoconto-periodo-label");
+  if (label) label.textContent = reportPeriodMode === "quarter" ? "Trimestre" : reportPeriodMode === "year" ? "Anno" : "Mese";
 }
 
 document.addEventListener("change", (e) => {
@@ -2573,7 +2995,7 @@ function renderResoconto() {
   if (!el) return;
   const focusId = document.activeElement && document.activeElement.id;
   const paymentsOpen = !!document.querySelector("#resoconto .resoconto-disclosure[open]");
-  fillMonthSelect();
+  fillPeriodSelect();
   fillReportClientSelect();
   const range = selectedMonth();
   const { label } = range;
@@ -2589,35 +3011,44 @@ function renderResoconto() {
   const creditoTotale = crediti.reduce((s, x) => s + x.saldo, 0);
   const daVerificare = pagamentiDaVerificareAl(range.last, clienteFiltro);
   const daVerificareContratti = daVerificare.reduce((s, p) => s + p.importo, 0);
-  const monthApps = data.appuntamenti.filter(a => a.data && inMonth(a.data)
+  const rangeApps = data.appuntamenti.filter(a => a.data && a.data >= range.first && a.data <= range.last
     && (!clienteFiltro || a.clienteId === clienteFiltro));
-  const svolte = monthApps.filter(a => a.fatto).length;
-  const daSvolgere = monthApps.length - svolte;
+  const svolte = rangeApps.filter(a => a.esito === "completata").length;
+  const daSvolgere = rangeApps.filter(a => !a.esito).length;
+  const clientiAttivi = clienteFiltro
+    ? (clienteById(clienteFiltro).stato === "Attivo" ? 1 : 0)
+    : data.clienti.filter(c => c.stato === "Attivo").length;
+  const caniSeguiti = new Set(rangeApps.filter(a => a.caneId).map(a => a.clienteId + ":" + a.caneId)).size;
   const senzaData = incassiSenzaData(clienteFiltro);
   const rimanentiTotali = data.pacchetti
     .filter(pk => !clienteFiltro || pk.clienteId === clienteFiltro)
     .reduce((s, pk) => s + lezioniRimanenti(pk), 0);
 
-  const selEl = document.getElementById("resoconto-mese");
-  const selYm = selEl ? selEl.value : recentMonths(1)[0];
-  const prevIncassato = incassatoMese(prevMonth(selYm), clienteFiltro);
   let trendText, trendCls;
-  if (prevIncassato === 0) {
-    trendText = "Trend vs mese precedente: —";
-    trendCls = "";
-  } else {
-    const pct = ((incassato - prevIncassato) / prevIncassato) * 100;
-    const abs = Math.abs(Math.round(pct));
-    if (pct > 0) {
-      trendText = "Trend vs mese precedente: +" + abs + "%";
-      trendCls = "resoconto-trend--up";
-    } else if (pct < 0) {
-      trendText = "Trend vs mese precedente: −" + abs + "%";
-      trendCls = "resoconto-trend--down";
+  if (reportPeriodMode === "month") {
+    const selEl = document.getElementById("resoconto-mese");
+    const selYm = selEl ? selEl.value : recentMonths(1)[0];
+    const prevIncassato = incassatoMese(prevMonth(selYm), clienteFiltro);
+    if (prevIncassato === 0) {
+      trendText = "Trend vs mese precedente: —";
+      trendCls = "";
     } else {
-      trendText = "Trend vs mese precedente: 0%";
-      trendCls = "resoconto-trend--pari";
+      const pct = ((incassato - prevIncassato) / prevIncassato) * 100;
+      const abs = Math.abs(Math.round(pct));
+      if (pct > 0) {
+        trendText = "Trend vs mese precedente: +" + abs + "%";
+        trendCls = "resoconto-trend--up";
+      } else if (pct < 0) {
+        trendText = "Trend vs mese precedente: −" + abs + "%";
+        trendCls = "resoconto-trend--down";
+      } else {
+        trendText = "Trend vs mese precedente: 0%";
+        trendCls = "resoconto-trend--pari";
+      }
     }
+  } else {
+    trendText = "Periodo selezionato";
+    trendCls = "";
   }
 
   const perCliente = new Map();
@@ -2642,11 +3073,12 @@ function renderResoconto() {
   resocontoSectionHead(overview, "Riepilogo", "Panoramica del periodo selezionato.");
   const kpis = createEl("div", "resoconto-kpis");
   appendKpi(kpis, "Incassato", money(incassato), trendText, trendCls);
-  appendKpi(kpis, "Crediti residui", money(creditoTotale), "al " + isoToDateLabel(range.last));
   appendKpi(kpis, "Lezioni svolte", String(svolte),
-    monthApps.length
+    rangeApps.length
       ? (daSvolgere ? countLabel(daSvolgere, "da svolgere", "da svolgere") : "Tutte svolte")
       : "Nessuna lezione in programma");
+  appendKpi(kpis, "Clienti attivi", String(clientiAttivi), "clienti attivi");
+  appendKpi(kpis, "Cani seguiti", String(caniSeguiti), "con lezioni nel periodo");
   overview.appendChild(kpis);
   el.appendChild(overview);
 
@@ -2656,6 +3088,7 @@ function renderResoconto() {
   const chips = createEl("div", "resoconto-chips");
   if (daSvolgere) appendChip(chips, countLabel(daSvolgere, "da svolgere", "da svolgere"));
   if (rimanentiTotali) appendChip(chips, countLabel(rimanentiTotali, "rimanente", "rimanenti"));
+  appendChip(chips, "Crediti residui " + money(creditoTotale));
   if (chips.children.length) {
     lessons.appendChild(chips);
   } else if (!daVerificare.length && !senzaData.length) {
@@ -2672,7 +3105,7 @@ function renderResoconto() {
   if (senzaData.length) {
     lessons.appendChild(createEl("p", "resoconto-note resoconto-note--warn",
       countLabel(senzaData.length, "incasso", "incassi") +
-      " senza data valida: esclusi dal totale mensile ma contati nel saldo dei pagamenti."));
+      " senza data valida: esclusi dal totale del periodo ma contati nel saldo dei pagamenti."));
   }
 
   const detail = createEl("details", "resoconto-disclosure");
@@ -2930,7 +3363,7 @@ function downloadCsv(name, rows) {
 }
 
 function csvFileName(prefix, r) {
-  const period = r.label.replace(/[^0-9]+/g, "-");
+  const period = r.label.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-+|-+$/g, "");
   const client = r.clienteFiltro ? "_" + csvFilePart(r.clienteLabel) : "";
   return prefix + "_" + period + client + ".csv";
 }
@@ -3008,7 +3441,7 @@ function renderReport() {
 
   root.innerHTML = `
     <header class="report__head">
-      <h1 class="report__title">Resoconto incassi e crediti</h1>
+      <h1 class="report__title">Report incassi e crediti</h1>
       <p class="report__period"></p>
       <p class="report__generated"></p>
     </header>
@@ -3076,8 +3509,8 @@ function renderReport() {
   }
   root.querySelector(".report__note--main").textContent = note;
   root.querySelector(".report__reconcile").textContent =
-    "Raccordo con l'app: l'Incassato effettivo nel mese mostrato a schermo è "
-    + money(r.effettivo) + "; i crediti residui al fine mese sono " + money(r.creditoTotale) + ".";
+    "Raccordo con l'app: l'Incassato effettivo nel periodo mostrato a schermo è "
+    + money(r.effettivo) + "; i crediti residui al fine periodo sono " + money(r.creditoTotale) + ".";
 
   const incassiBody = root.querySelector(".report__incassi-body");
   if (!r.incassi.length) {
@@ -3163,7 +3596,7 @@ function renderReport() {
 
 function printReport() {
   try {
-    // Rigenera per essere certo che il report corrisponda al mese selezionato.
+    // Rigenera per essere certo che il report corrisponda al periodo selezionato.
     renderReport();
     window.print();
   } catch (err) {
@@ -3172,33 +3605,46 @@ function printReport() {
 }
 
 
+function ricalcolaUtilizzate(pk) {
+  if (!pk) return false;
+  const completate = data.appuntamenti.filter(a =>
+    a.pacchettoId === pk.id && a.esito === "completata").length;
+  const extra = Number.isInteger(pk.consumiManuali) ? pk.consumiManuali : 0;
+  const target = Math.min(pk.lezioni, Math.max(0, completate + extra));
+  if (target !== pk.utilizzate) {
+    pk.utilizzate = target;
+    return true;
+  }
+  return false;
+}
+
+/* Alla scadenza una lezione senza esito viene considerata completata.
+   Assenze e annullamenti espliciti non consumano la lezione. */
 function autoConsumeLezioni() {
   const now = new Date();
   let changed = false;
   for (const pk of data.pacchetti) {
-    let expired = 0;
+    if (!Number.isInteger(pk.consumiManuali)) pk.consumiManuali = 0;
     for (const a of data.appuntamenti) {
       if (a.pacchettoId !== pk.id || !a.data || !a.ora) continue;
       const when = new Date(a.data + "T" + a.ora + ":00");
       if (isNaN(when.getTime()) || when > now) continue;
-      expired++;
-      if (!a.fatto) {
+      if (!a.esito) {
+        a.esito = "completata";
         a.fatto = true;
         changed = true;
       }
     }
-    const target = Math.min(pk.lezioni, Math.max(pk.utilizzate, expired));
-    if (target !== pk.utilizzate) {
-      pk.utilizzate = target;
-      changed = true;
-    }
+    if (ricalcolaUtilizzate(pk)) changed = true;
   }
   return changed;
 }
 
 function refresh() {
   autoConsumeLezioni();
+  renderHome();
   renderClienti();
+  renderPagamenti();
   renderArchivio();
   renderAppuntamenti();
   renderResoconto();
@@ -3319,14 +3765,82 @@ function openPacchettoForm(categoria) {
   if (first) first.focus();
 }
 
+function fillSelect(select, options, selected, placeholder) {
+  if (!select) return;
+  select.innerHTML = "";
+  if (placeholder) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = placeholder;
+    select.appendChild(opt);
+  }
+  for (const item of options) {
+    const opt = document.createElement("option");
+    opt.value = String(item.value);
+    opt.textContent = item.label;
+    select.appendChild(opt);
+  }
+  select.value = selected != null ? String(selected) : "";
+}
+
+function fillAppuntamentoCani(form, clienteId, selected) {
+  const select = form.querySelector('select[name="caneId"]');
+  if (!select) return;
+  const c = clienteById(Number(clienteId));
+  const cani = c && Array.isArray(c.cani) ? c.cani : [];
+  fillSelect(select, cani.map(d => ({
+    value: d.id,
+    label: d.nome || "Cane" + (d.razza ? " · " + d.razza : ""),
+  })), selected || (cani[0] ? cani[0].id : ""), cani.length ? "" : "Nessun cane");
+  select.disabled = cani.length === 0;
+}
+
+function fillAppuntamentoPacchetti(form, clienteId, selected) {
+  const select = form.querySelector('select[name="pacchettoId"]');
+  if (!select) return;
+  const cid = Number(clienteId);
+  const options = [{ value: 0, label: "Lezione singola (nuova)" }];
+  for (const pk of data.pacchetti.filter(p => p.clienteId === cid)) {
+    const count = lezioniProgrammate(pk);
+    if (count >= pk.lezioni && pk.id !== Number(selected)) continue;
+    options.push({
+      value: pk.id,
+      label: lezioneLabel(pk) + " · " + count + "/" + pk.lezioni,
+    });
+  }
+  fillSelect(select, options, selected || 0, "");
+}
+
+function setEsitoForm(form, esito) {
+  const value = ["completata", "assente", "annullata"].includes(esito) ? esito : "";
+  const radios = form.querySelectorAll('input[name="esito"]');
+  for (const r of radios) r.checked = r.value === value;
+}
+
 function openAppuntamentoForm(panelId, values) {
   const panel = document.getElementById(panelId);
   if (!panel) return;
   toggleForm(panelId, true);
   const form = panel.querySelector("form");
-  form.elements.namedItem("clienteId").value = String(values.clienteId || 0);
-  form.elements.namedItem("pacchettoId").value = String(values.pacchettoId || 0);
-  form.elements.namedItem("istruttore").value = values.istruttore || "";
+  const clientField = form.elements.namedItem("clienteId");
+  if (clientField && clientField.tagName === "SELECT") {
+    fillSelect(clientField, data.clienti
+      .slice().sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+      .map(c => ({ value: c.id, label: c.nome + (c.stato === "Archiviato" ? " (archiviato)" : "") })),
+      values.clienteId || "", "Seleziona cliente");
+  } else if (clientField) {
+    clientField.value = String(values.clienteId || 0);
+  }
+  const selectedCliente = Number(clientField ? clientField.value : values.clienteId || 0);
+  fillAppuntamentoCani(form, selectedCliente, values.caneId || 0);
+  fillAppuntamentoPacchetti(form, selectedCliente, values.pacchettoId || 0);
+  const packageField = form.elements.namedItem("pacchettoId");
+  if (packageField && packageField.tagName !== "SELECT") packageField.value = String(values.pacchettoId || 0);
+  if (form.elements.namedItem("id")) form.elements.namedItem("id").value = values.id ? String(values.id) : "";
+  if (form.elements.namedItem("data") && values.data) form.elements.namedItem("data").value = isoToDateLabel(values.data);
+  if (form.elements.namedItem("ora") && values.ora) form.elements.namedItem("ora").value = values.ora;
+  if (form.elements.namedItem("istruttore")) form.elements.namedItem("istruttore").value = values.istruttore || "";
+  if (form.elements.namedItem("note")) form.elements.namedItem("note").value = values.note || "";
   if (values.tipo) {
     const sel = form.elements.namedItem("tipo");
     if (sel && sel.tagName === "SELECT") {
@@ -3339,11 +3853,32 @@ function openAppuntamentoForm(panelId, values) {
       sel.value = values.tipo;
     }
   }
-  const first = panel.querySelector("input:not([type=hidden]), select");
+  setEsitoForm(form, values.esito || (values.fatto ? "completata" : ""));
+  const first = panel.querySelector("select[name=clienteId], select[name=caneId], input:not([type=hidden])");
   if (first) first.focus();
 }
 
 function handleClick(e) {
+  const appuntamentoRow = e.target.closest("#appuntamenti-list li[data-id]");
+  if (appuntamentoRow && !e.target.closest("button, a")) {
+    const cid = Number(appuntamentoRow.dataset.clienteId || 0);
+    if (cid && clienteById(cid)) {
+      selectedClienteId = cid;
+      detailTriggerId = cid;
+      goTo("clienti");
+      renderClienti();
+      return;
+    }
+  }
+  const clienteRow = e.target.closest("#clienti-list li[data-id]");
+  if (clienteRow && !e.target.closest("button, a")) {
+    selectedClienteId = Number(clienteRow.dataset.id);
+    detailTriggerId = selectedClienteId;
+    renderClienti();
+    const box = document.getElementById("cliente-dettaglio");
+    if (box) box.scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
   const cancel = e.target.closest("[data-cancel]");
   if (cancel) { toggleForm(cancel.dataset.cancel, false); return; }
   const cancelReceipt = e.target.closest("[data-cancel-receipt]");
@@ -3383,7 +3918,13 @@ function handleClick(e) {
     const act = action.dataset.action;
     if (act === "segna-fatto") {
       const a = data.appuntamenti.find(x => x.id === id);
-      if (a) { a.fatto = true; commit("Appuntamento segnato come fatto."); }
+      if (a) {
+        rememberUndo("Lezione segnata completata.");
+        a.esito = "completata";
+        a.fatto = true;
+        if (!commit("Lezione segnata completata.")) { restoreUndoState(); return; }
+        offerUndo();
+      }
     } else if (act === "consuma-lezione") {
       const pk = data.pacchetti.find(x => x.id === id);
       if (pk && pk.utilizzate < pk.lezioni) {
@@ -3461,6 +4002,80 @@ function handleClick(e) {
       data.incassi = data.incassi.filter(i => i.pagamentoId !== p.id);
       if (!commit("Pagamento eliminato.")) { restoreUndoState(); return; }
       offerUndo();
+    } else if (act === "nuovo-cane" || act === "modifica-cane") {
+      const box = action.closest(".detail-panel");
+      const cid = Number(box ? box.dataset.clienteId : 0);
+      const c = clienteById(cid);
+      if (!c) return;
+      const caneId = Number(action.dataset.caneId || 0);
+      const dog = caneId ? caneById(c, caneId) : null;
+      toggleForm("form-cliente-cane", true, dog || null);
+      const form = document.querySelector("#form-cliente-cane form");
+      if (form) {
+        form.elements.namedItem("clienteId").value = String(cid);
+        form.elements.namedItem("caneId").value = dog ? String(dog.id) : "";
+        if (!dog) {
+          form.elements.namedItem("nome").value = "";
+          form.elements.namedItem("razza").value = "";
+          form.elements.namedItem("eta").value = "";
+        }
+      }
+    } else if (act === "scheda-cane") {
+      const box = action.closest(".detail-panel");
+      const cid = Number(box ? box.dataset.clienteId : 0);
+      selectedCaneId = Number(action.dataset.caneId || 0);
+      renderCaneDettaglio(box, clienteById(cid));
+      const el = box ? box.querySelector("#cliente-cane-dettaglio") : null;
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else if (act === "chiudi-cane") {
+      selectedCaneId = 0;
+      const box = action.closest(".detail-panel");
+      renderCaneDettaglio(box, clienteById(Number(box ? box.dataset.clienteId : 0)));
+    } else if (act === "nuova-lezione-cliente") {
+      const box = action.closest(".detail-panel");
+      const cid = Number(box ? box.dataset.clienteId : 0);
+      if (!cid) return;
+      const c = clienteById(cid);
+      const dog = caneById(c, selectedCaneId) || canePrimario(c);
+      const pk = data.pacchetti.find(x => x.clienteId === cid
+        && x.categoria === "pacchetto" && lezioniProgrammate(x) < x.lezioni);
+      const activity = box ? box.querySelector("#cliente-attivita") : null;
+      if (activity) activity.open = true;
+      openAppuntamentoForm(CARD_FORMS.appuntamento, {
+        clienteId: cid,
+        caneId: dog ? dog.id : 0,
+        pacchettoId: pk ? pk.id : 0,
+        istruttore: pk ? pk.istruttore : "",
+        tipo: pk ? "Addestramento" : "Addestramento",
+      });
+    } else if (act === "registra-pagamento-cliente") {
+      const box = action.closest(".detail-panel");
+      const cid = Number(box ? box.dataset.clienteId : 0);
+      const p = data.pagamenti.find(x => x.clienteId === cid && !x.incassoDaVerificare && saldoPagamento(x) > 0);
+      if (!p) { setStatus("Nessun contratto con saldo da incassare per questo cliente.", true); return; }
+      const pk = data.pacchetti.find(x => x.id === p.pacchettoId);
+      const group = pk && box ? box.querySelector('.lezione-group[data-id="' + pk.id + '"]') : null;
+      const block = group ? group.querySelector(".lezione-block--payments") : null;
+      if (!block) { setStatus("Apri il pacchetto del cliente per registrare l'incasso.", true); return; }
+      const activity = box ? box.querySelector("#cliente-attivita") : null;
+      if (activity) activity.open = true;
+      block.hidden = false;
+      const toggle = group.querySelector("[data-action=toggle-pagamento]");
+      if (toggle) toggle.setAttribute("aria-expanded", "true");
+      block.scrollIntoView({ behavior: "smooth", block: "start" });
+      const trigger = block.querySelector("[data-action=registra-incasso]");
+      if (trigger) { trigger.click(); trigger.focus(); }
+    } else if (act === "toggle-storico-cliente") {
+      const box = action.closest(".detail-panel");
+      const cid = Number(box ? box.dataset.clienteId : 0);
+      const panel = box ? box.querySelector("#cliente-storico-panel") : null;
+      if (!panel) return;
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden && !panel.dataset.rendered) {
+        panel.dataset.rendered = "1";
+        renderClienteStorico(panel, clientLinks(cid));
+      }
+      if (!panel.hidden) panel.scrollIntoView({ behavior: "smooth", block: "start" });
     } else if (act === "modifica-pacchetto") {
       const pk = data.pacchetti.find(x => x.id === id);
       if (pk) {
@@ -3470,7 +4085,7 @@ function handleClick(e) {
     } else if (act === "nuova-lezione") {
       const pk = data.pacchetti.find(x => x.id === id);
       if (!pk) return;
-      const count = data.appuntamenti.filter(a => a.pacchettoId === pk.id).length;
+      const count = lezioniProgrammate(pk);
       if (count >= pk.lezioni) {
         setStatus("Hai già programmato tutte le lezioni di questo pacchetto.", true);
         return;
@@ -3637,14 +4252,14 @@ function handleClick(e) {
       const a = data.appuntamenti.find(x => x.id === id);
       if (!a) return;
       if (action.closest("#view-appuntamenti")) {
-        toggleForm("form-appuntamento", true, a);
+        openAppuntamentoForm("form-appuntamento", a);
         const info = document.querySelector("[data-appuntamento-info]");
         if (info) {
           const pk = a.pacchettoId ? data.pacchetti.find(x => x.id === a.pacchettoId) : null;
           info.textContent = clienteNome(a.clienteId) + (pk ? " · " + lezioneLabel(pk) : "");
         }
       } else {
-        toggleForm(CARD_FORMS.appuntamento, true, a);
+        openAppuntamentoForm(CARD_FORMS.appuntamento, a);
       }
     } else if (act === "elimina-appuntamento") {
       const a = data.appuntamenti.find(x => x.id === id);
@@ -3666,6 +4281,20 @@ function handleClick(e) {
     renderResoconto();
     return;
   }
+  if (e.target.id === "btn-nuovo-appuntamento") { openAppuntamentoForm("form-appuntamento", { clienteId: 0 }); return; }
+  if (e.target.id === "btn-nuovo-pagamento-globale") {
+    toggleForm("form-pagamento-globale", true);
+    const form = document.querySelector("#form-pagamento-globale form");
+    if (form) {
+      renderPagamenti();
+      const date = form.elements.namedItem("data");
+      if (date) date.value = todayInput();
+      const client = form.elements.namedItem("clienteId");
+      if (client && client.value) client.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    return;
+  }
+  if (e.target.id === "btn-csv-incassi-pagina") { exportCsvIncassi(); return; }
   if (e.target.id === "btn-csv-incassi") { exportCsvIncassi(); return; }
   if (e.target.id === "btn-csv-pagamenti") { exportCsvPagamenti(); return; }
   if (e.target.id === "btn-esporta" || e.target.id === "btn-backup-now") { exportData(); return; }
@@ -3690,6 +4319,7 @@ document.addEventListener("submit", (e) => {
     const id = Number(fd.get("id") || 0);
     const nome = (fd.get("nome") || "").toString().trim();
     const telefono = (fd.get("telefono") || "").toString().trim();
+    const email = (fd.get("email") || "").toString().trim().slice(0, 120);
     const cane = (fd.get("cane") || "").toString().trim();
     const razza = (fd.get("razza") || "").toString().trim();
     const eta = (fd.get("eta") || "").toString().trim();
@@ -3705,7 +4335,10 @@ document.addEventListener("submit", (e) => {
       if (!c) { setStatus("Cliente non trovato.", true); return; }
       const eraArchiviato = c.stato === "Archiviato";
       rememberUndo("Cliente modificato.");
-      Object.assign(c, { nome, telefono, cane, razza, eta, note, stato });
+      const cani = Array.isArray(c.cani) && c.cani.length ? c.cani.slice() : [];
+      if (cani.length) cani[0] = { ...cani[0], nome: cane, razza, eta };
+      else cani.push({ id: 1, nome: cane, razza, eta });
+      Object.assign(c, { nome, telefono, email, cane, razza, eta, note, stato, cani });
       if (stato === "Archiviato") {
         selectedClienteId = 0;
         detailTriggerId = 0;
@@ -3720,13 +4353,44 @@ document.addEventListener("submit", (e) => {
       offerUndo();
       return;
     }
-    const row = { id: nextId(data.clienti), nome, telefono, cane, razza, eta, note, stato };
+    const row = {
+      id: nextId(data.clienti), nome, telefono, email, cane, razza, eta, note, stato,
+      cani: [{ id: 1, nome: cane, razza, eta }],
+    };
     data.clienti.push(row);
     if (!commit("Cliente salvato: " + nome)) {
       data.clienti = data.clienti.filter(c => c.id !== row.id);
       return;
     }
     toggleForm("form-cliente", false);
+  }
+
+  if (kind === "cane") {
+    const clienteId = Number(fd.get("clienteId"));
+    const caneId = Number(fd.get("caneId") || 0);
+    const c = clienteById(clienteId);
+    if (!c) { setStatus("Cliente non trovato.", true); return; }
+    const nome = (fd.get("nome") || "").toString().trim();
+    if (!nome) { setStatus("Inserisci il nome del cane.", true); return; }
+    const razza = (fd.get("razza") || "").toString().trim();
+    const eta = (fd.get("eta") || "").toString().trim();
+    rememberUndo(caneId ? "Cane modificato." : "Cane aggiunto.");
+    if (!Array.isArray(c.cani)) c.cani = [];
+    if (caneId) {
+      const dog = caneById(c, caneId);
+      if (!dog) { setStatus("Cane non trovato.", true); return; }
+      Object.assign(dog, { nome, razza, eta });
+    } else {
+      const id = c.cani.reduce((m, d) => Math.max(m, d.id), 0) + 1;
+      c.cani.push({ id, nome, razza, eta });
+    }
+    c.cane = c.cani[0] ? c.cani[0].nome : "";
+    c.razza = c.cani[0] ? c.cani[0].razza : "";
+    c.eta = c.cani[0] ? c.cani[0].eta : "";
+    if (!commit(caneId ? "Cane aggiornato." : "Cane aggiunto.")) { restoreUndoState(); return; }
+    toggleForm("form-cliente-cane", false);
+    offerUndo();
+    return;
   }
 
   if (kind === "pagamento") {
@@ -3905,6 +4569,7 @@ document.addEventListener("submit", (e) => {
     const nuovoPacchetto = {
       id: nextId(data.pacchetti), clienteId, categoria, tipo, istruttore: defaultInstructor,
       lezioni: categoria === "singola" ? 1 : lezioni, utilizzate: 0, prezzo, data: data_,
+      consumiManuali: 0,
     };
     const nuovoPagamento = prezzo > 0 ? {
       id: nextId(data.pagamenti),
@@ -3933,11 +4598,14 @@ document.addEventListener("submit", (e) => {
         const app = {
           id: nextAppId++,
           clienteId,
+          caneId: canePrimario(clienteById(clienteId))?.id || 0,
           data: row.data,
           ora: row.ora,
           tipo: defaultTipo,
           istruttore: row.istruttore || defaultInstructor,
           pacchettoId: nuovoPacchetto.id,
+          esito: "",
+          note: "",
           fatto: false,
         };
         newAppointments.push(app);
@@ -3960,14 +4628,22 @@ document.addEventListener("submit", (e) => {
   if (kind === "appuntamento") {
     const id = Number(fd.get("id") || 0);
     const clienteId = Number(fd.get("clienteId"));
-    const pacchettoId = Number(fd.get("pacchettoId") || 0);
+    const caneId = Number(fd.get("caneId") || 0);
+    let pacchettoId = Number(fd.get("pacchettoId") || 0);
     const data_ = parseDateInput(fd.get("data"));
     const ora = (fd.get("ora") || "").toString();
     const tipo = (fd.get("tipo") || "").toString();
     const istruttore = (fd.get("istruttore") || "").toString().trim().slice(0, 60);
+    const esitoRaw = (fd.get("esito") || "").toString();
+    const esito = ["completata", "assente", "annullata"].includes(esitoRaw) ? esitoRaw : "";
+    const note = (fd.get("note") || "").toString().trim().slice(0, 500);
     if (!clienteId || !data_ || !ora || !tipo) { setStatus("Completa tutti i campi della lezione.", true); return; }
     if (!clienteId || !clienteById(clienteId)) { setStatus("Cliente non valido: riapri la scheda e riprova.", true); return; }
     if (!isIsoDate(data_) || !isTime(ora)) { setStatus("Data o ora non valide.", true); return; }
+    const cliente = clienteById(clienteId);
+    const cane = caneId ? caneById(cliente, caneId) : canePrimario(cliente);
+    if (!cane) { setStatus("Aggiungi almeno un cane al cliente prima di salvare una lezione.", true); return; }
+    const caneIdFinal = cane.id;
     let linked = null;
     if (pacchettoId) {
       linked = data.pacchetti.find(pk => pk.id === pacchettoId);
@@ -3977,7 +4653,7 @@ document.addEventListener("submit", (e) => {
       }
     }
     if (!id && linked) {
-      const count = data.appuntamenti.filter(a => a.pacchettoId === linked.id).length;
+      const count = lezioniProgrammate(linked);
       if (count >= linked.lezioni) {
         setStatus("Hai già programmato tutte le lezioni di questo pacchetto.", true);
         return;
@@ -3991,7 +4667,7 @@ document.addEventListener("submit", (e) => {
       const a = data.appuntamenti.find(x => x.id === id);
       if (!a) { setStatus("Lezione non trovata.", true); return; }
       rememberUndo("Lezione modificata.");
-      Object.assign(a, { clienteId, pacchettoId, data: data_, ora, tipo, istruttore });
+      Object.assign(a, { clienteId, caneId: caneIdFinal, pacchettoId, data: data_, ora, tipo, istruttore, esito, note, fatto: esito === "completata" });
       if (!commit("Lezione aggiornata per " + clienteNome(clienteId))) {
         restoreUndoState();
         return;
@@ -4000,9 +4676,18 @@ document.addEventListener("submit", (e) => {
       offerUndo();
       return;
     }
+    if (!pacchettoId) {
+      const nuovaSingola = {
+        id: nextId(data.pacchetti), clienteId, categoria: "singola", tipo,
+        istruttore, lezioni: 1, utilizzate: 0, prezzo: 0, data: data_,
+        consumiManuali: 0,
+      };
+      data.pacchetti.push(nuovaSingola);
+      pacchettoId = nuovaSingola.id;
+    }
     const row = {
-      id: nextId(data.appuntamenti), clienteId, pacchettoId,
-      data: data_, ora, tipo, istruttore, fatto: false,
+      id: nextId(data.appuntamenti), clienteId, caneId: caneIdFinal, pacchettoId,
+      data: data_, ora, tipo, istruttore, esito, note, fatto: esito === "completata",
     };
     data.appuntamenti.push(row);
     if (!commit("Lezione salvata per " + clienteNome(clienteId))) {
@@ -4010,6 +4695,33 @@ document.addEventListener("submit", (e) => {
       return;
     }
     closeFormPanel(form);
+  }
+
+  if (kind === "incasso-globale") {
+    const pagamentoId = Number(fd.get("pagamentoId"));
+    const importo = Math.round(Number(fd.get("importo")) * 100) / 100;
+    const data_ = parseDateInput(fd.get("data"));
+    const nota = (fd.get("nota") || "").toString().trim();
+    const p = data.pagamenti.find(x => x.id === pagamentoId);
+    if (!p) { setStatus("Seleziona un contratto da incassare.", true); return; }
+    if (!(importo > 0) || !isFinite(importo)) { setStatus("Inserisci un importo valido.", true); return; }
+    if (!isIsoDate(data_)) { setStatus("Inserisci una data incasso valida.", true); return; }
+    const max = p.incassoDaVerificare ? p.importo : saldoPagamento(p);
+    if (importo > max + 0.005) {
+      setStatus("L'importo supera il saldo disponibile (" + money(max) + ").", true);
+      return;
+    }
+    const r = addIncasso(p.id, importo, data_, nota);
+    if (!r) { setStatus("Impossibile registrare l'incasso.", true); return; }
+    if (!commit("Pagamento registrato: " + money(importo) + " per " + clienteNome(p.clienteId) + ". Saldo " + money(saldoPagamento(p)) + ".")) {
+      data.incassi = data.incassi.filter(i => i.id !== r.id);
+      ricalcolaStatiPagamenti();
+      refresh();
+      return;
+    }
+    toggleForm("form-pagamento-globale", false);
+    renderPagamenti();
+    return;
   }
 
   if (kind === "incasso") {

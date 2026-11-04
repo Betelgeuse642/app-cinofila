@@ -6,24 +6,27 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 ## Stato del progetto
 - Web app realizzata con HTML, CSS e JavaScript vanilla.
 - Dati salvati localmente tramite `localStorage`, chiave `cinofilo-data-v1`.
-- Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`; i pacchetti hanno `categoria` (`pacchetto`/`singola`), `tipo` e `istruttore`; gli appuntamenti hanno `pacchettoId` e `istruttore`.
+- Modello dati: `{ clienti, pagamenti, appuntamenti, pacchetti, incassi }`; i clienti hanno `cani[]` ed `email`; i pacchetti hanno `categoria` (`pacchetto`/`singola`), `tipo`, `istruttore` e `consumiManuali`; gli appuntamenti hanno `pacchettoId`, `caneId`, `istruttore`, `esito` e `note`.
 - Incassi separati dai contratti: stati pagamento derivati (`Pagato`, `Parziale`, `Da pagare`, `Da verificare`).
 - Funzioni di esportazione e importazione JSON, snapshot automatico e blocco multi-scheda.
-- Scheda cliente con due sole sezioni oltre l’anagrafica: **Pacchetto lezioni** e **Lezione singola**. Ogni gruppo è una scheda compatta con intestazione su due righe: titolo e azioni (`Modifica/Elimina`, `Pagamento`) sulla stessa riga, informazioni (lezioni utilizzate/rimaste, stato pagamento, data) sotto, poi divisore sottile e calendario. Pagamento espandibile; per i pacchetti elenco compatto delle date con piccoli tasti Modifica/Elimina.
+- Scheda cliente con intestazione contatti, sezione **Cani** (aggiunta, modifica, scheda cane), riepilogo attività e pulsanti **Nuova lezione**, **Registra pagamento**, **Storico**; pacchetti e lezioni restano in una sezione espandibile.
+- Home con quattro schede: **Oggi**, **Clienti**, **Pagamenti**, **Report**; barra inferiore a quattro voci su mobile e navigazione laterale su desktop.
 - Date delle lezioni scelte individualmente, istruttore indicato per ogni lezione (senza campo separato sul pacchetto); data di vendita automatica; acconti iniziali senza data/nota, con etichetta automatica.
 - Tutti i campi data usano il formato `gg/mm/aaaa` con normalizzazione al blur, pulsante calendario affiancato e selettore nativo condiviso; i valori restano memorizzati in ISO (`AAAA-MM-GG`).
-- Consumo automatico delle lezioni alla scadenza: se una lezione non viene modificata o eliminata prima della data, incrementa le lezioni utilizzate del pacchetto/lezione; il dato viene salvato su caricamento, salvataggio e controllo periodico.
-- Home con quattro pulsanti (**Scheda cliente**, **Appuntamenti**, **Resoconto**, **Archivio**) e viste `home`, `clienti`, `appuntamenti`, `archivio`, `resoconto`. `#appuntamenti` è una vista reale; gli hash legacy `#pagamenti` e `#pacchetti` vengono reindirizzati a `#clienti`.
-- Archivio diviso in **Archivio clienti** e **Archivio lezioni**. Le lezioni con data precedente a oggi escono da Appuntamenti e compaiono nell’archivio lezioni, raggruppate per giorno, con tag Fatto/Scaduta; aggiornamento automatico al cambio giornata senza reload.
+- Esiti lezione: `completata`, `assente`, `annullata`; solo completata consuma e genera giornate collaboratore. Una lezione scaduta senza esito viene completata automaticamente.
+- Report con periodo mese/trimestre/anno e indicatori incassi, lezioni, clienti attivi e cani seguiti; sezione Collaboratori mantenuta.
+- Viste e rotte: `home`, `oggi`, `clienti`, `pagamenti`, `report`, `archivio`; alias `#appuntamenti → #oggi`, `#resoconto → #report`, `#pacchetti → #clienti`. `#pagamenti` è una vista reale.
+- Pagamenti globali: incassato del mese, importi da incassare, pagamenti ricevuti, ultimi movimenti e registrazione rapida su contratto.
+- Archivio diviso in **Clienti archiviati** e **Lezioni archiviate**. Le lezioni con data precedente a oggi escono da Oggi e compaiono nell’archivio lezioni, raggruppate per giorno, con esito Completata/Assente/Annullata; aggiornamento automatico al cambio giornata senza reload.
 - Eliminazione a cascata del cliente (pacchetti, pagamenti, incassi e appuntamenti) o del pacchetto/lezione (pagamenti, incassi e appuntamenti non svolti; quelli svolti restano senza collegamento); conferma con conteggi e avvisi, operazione annullabile.
 - Nessun dato di esempio: il primo avvio è vuoto e non viene scritto nulla automaticamente.
-- Ricerca/filtri su Clienti, Archivio clienti, Archivio lezioni e Appuntamenti; agenda globale di oggi e future, raggruppata per giorno, con filtri per periodo, stato e categoria.
-- Resoconto e report filtrabili per mese e cliente; export CSV di incassi e pagamenti.
-- Resoconto a tre sezioni: **Riepilogo**, **Lezioni**, **Collaboratori**. Il registro collaboratori è derivato dagli appuntamenti con `fatto: true`, con una giornata per data distinta, fallback all’istruttore del pacchetto e filtri per collaboratore, mese, anno e intervallo; non salva nuovi campi. Il consumo automatico delle lezioni scadute imposta `fatto` e aggiorna registro e KPI.
+- Ricerca/filtri su Clienti, Clienti archiviati, Lezioni archiviate e Oggi; agenda di oggi e future, raggruppata per giorno, con filtri per periodo, stato e categoria.
+- Report filtrabile per mese/trimestre/anno e cliente; export CSV di incassi e pagamenti.
+- Report a tre sezioni: **Riepilogo**, **Lezioni**, **Collaboratori**. Il registro collaboratori è derivato dalle lezioni con esito `completata`, con una giornata per data distinta, fallback all’istruttore del pacchetto e filtri per collaboratore, mese, anno e intervallo; non salva nuovi campi.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
-- Restyling "studio caldo": serif editoriale, carta avorio, verde bosco, bordi sottili e card con ombre leggere.
-- Fasi 8–17 completate e pubblicate. Fasi 18–43 completate, verificate e pubblicate su `main` (merge `72dd2b8`); GitHub Pages ha pubblicato il commit.
-- Ultima verifica dichiarata: **624 test superati, 0 fallimenti** (03/11/2026).
+- Restyling gestionale moderno: card bianche arrotondate, palette blu/verde/arancione/viola, icone SVG inline, mobile-first.
+- Fasi 8–17 completate e pubblicate. Fasi 18–44 completate e verificate localmente sul branch `feat/restyling-gestionale-cinofilo`; pubblicazione non ancora eseguita.
+- Ultima verifica dichiarata: **663 test superati, 0 fallimenti** (04/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
 
@@ -69,6 +72,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 test_fase16.py        # 50
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase30.py        # 78
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase42.py        # 53
 PYTHONDONTWRITEBYTECODE=1 python3 test_fase43.py        # 31
+PYTHONDONTWRITEBYTECODE=1 python3 test_fase44.py        # 39
 ```
 
 Esegui tutte le suite dopo modifiche a modello dati, rendering, filtri, report o accessibilità, e riporta i conteggi effettivi.
