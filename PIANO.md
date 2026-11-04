@@ -1642,4 +1642,4 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 - La lezione scaduta senza esito viene completata automaticamente; per assenze/annullamenti occorre registrare l'esito prima o correggerlo dopo.
 - L'Archivio lezioni resta in sola consultazione; per modificare una lezione si usa la scheda cliente.
 - I filtri mese/cliente del Report e quelli dei Collaboratori restano indipendenti.
-- Branch `feat/restyling-gestionale-cinofilo`; nessun commit/push/pubblicazione.
+- Pubblicata su `main`; GitHub Pages pubblica il commit di merge del branch `feat/restyling-gestionale-cinofilo`.

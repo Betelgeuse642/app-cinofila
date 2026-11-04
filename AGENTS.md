@@ -25,7 +25,7 @@ Web app per istruttori cinofili, inizialmente per uso personale e potenzialmente
 - Report a tre sezioni: **Riepilogo**, **Lezioni**, **Collaboratori**. Il registro collaboratori è derivato dalle lezioni con esito `completata`, con una giornata per data distinta, fallback all’istruttore del pacchetto e filtri per collaboratore, mese, anno e intervallo; non salva nuovi campi.
 - Accessibilità: focus gestito, chiusura con `Escape`, ARIA di base, contrasto AA, layout mobile.
 - Restyling gestionale moderno: card bianche arrotondate, palette blu/verde/arancione/viola, icone SVG inline, mobile-first.
-- Fasi 8–17 completate e pubblicate. Fasi 18–44 completate e verificate localmente sul branch `feat/restyling-gestionale-cinofilo`; pubblicazione non ancora eseguita.
+- Fasi 8–17 completate e pubblicate. Fasi 18–44 completate, verificate e pubblicate su `main`; GitHub Pages pubblica il commit di merge del branch `feat/restyling-gestionale-cinofilo`.
 - Ultima verifica dichiarata: **663 test superati, 0 fallimenti** (04/11/2026).
 
 Queste informazioni descrivono lo stato noto. Verifica sempre il repository prima di assumere che non sia cambiato.
