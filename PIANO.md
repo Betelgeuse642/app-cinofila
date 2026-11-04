@@ -1589,3 +1589,57 @@ La pubblicazione (merge, push e tag) è stata autorizzata successivamente e comp
 ## Prossimo passo / Fermo
 
 - Fase 43 completata, integrata su `main` e pubblicata su GitHub Pages.
+
+---
+
+# Fase 44 — Restyling gestionale, multi-cane, esiti, pagamenti e report (completata e verificata localmente)
+
+## Richiesta
+
+- Trasformare l'app in un gestionale cinofilo moderno e semplice, ispirato alle immagini in `esempi_app/`.
+- Nuova home con Oggi, Clienti, Pagamenti e Report; navigazione inferiore su mobile e laterale su desktop.
+- Scheda cliente con più cani, azioni rapide, storico separato.
+- Registrazione lezione con esiti Completata/Assente/Annullata e conteggi corretti.
+- Vista Pagamenti globale.
+- Report con filtri mese/trimestre/anno, indicatori semplici e sezione Collaboratori mantenuta.
+- Conservare dati, backup, CSV, report stampabile, offline e compatibilità.
+
+## Decisioni
+
+- Nessuna riscrittura: restano HTML/CSS/JS vanilla, `localStorage` e il modello esistente con migrazioni additive.
+- Clienti: aggiunti `cani[]` (id, nome, razza, età) e `email`; i vecchi campi singoli restano sincronizzati per compatibilità.
+- Lezioni: aggiunti `caneId`, `esito`, `note`; `fatto` resta derivato (`esito === "completata"`).
+- Consumi: `utilizzate` derivato dalle lezioni completate più `consumiManuali` per preservare i dati storici senza appuntamento.
+- Alla scadenza una lezione senza esito diventa Completata; assenze e annullamenti non consumano e liberano un posto nel pacchetto.
+- Rotte canoniche: `#home`, `#oggi`, `#clienti`, `#pagamenti`, `#report`, `#archivio`; alias `#appuntamenti → #oggi`, `#resoconto → #report`, `#pacchetti → #clienti`.
+- Archivio accessibile da Home, Clienti e Report, fuori dalla barra a quattro voci.
+- Pagamenti globali riusano contratti/incassi; nessun pagamento slegato da un contratto.
+
+## Implementazione effettiva
+
+- **Design**: palette blu/verde/arancione/viola, card bianche arrotondate, icone SVG inline, home a quattro schede, barra inferiore mobile e navigazione laterale desktop.
+- **Home**: Oggi, Clienti, Pagamenti, Report con conteggi dinamici e link Archivio; quattro card grandi con icone.
+- **Oggi**: agenda di oggi per impostazione predefinita, filtri per stato/categoria e accesso alle date future; card con ora, cliente, cane e tipo; tocco sulla riga per aprire la scheda.
+- **Clienti**: elenco con avatar/iniziali, contatti, cani, lezioni rimanenti e saldo; riga apribile.
+- **Scheda cliente**: intestazione con telefono/email/stato, sezione cani con aggiunta/modifica/scheda cane, riepilogo attività, pulsanti Nuova lezione/Registra pagamento/Storico, attività e pacchetti espandibili.
+- **Lezioni**: cane selezionabile, data/ora, tipo, istruttore, note, esiti visuali; form globale con cliente, cane, pacchetto/lezione singola.
+- **Conteggi**: completata consuma; assente/annullata no; auto-scadenza senza esito completa; modifica esito ricalcola; `consumiManuali` preserva lo storico.
+- **Pagamenti**: nuova vista con incassato mese, da incassare, pagamenti ricevuti, ultimi movimenti e registrazione rapida su contratto.
+- **Report**: tab Mese/Trimestre/Anno, indicatore incassi, lezioni svolte, clienti attivi, cani seguiti; crediti e dettagli espandibili; Collaboratori invariati.
+- **Archivio**: lezioni passate con esito visibile, ricerca per cane/istruttore/tipo/data; clienti archiviati invariati.
+- **Compatibilità**: export schema 4 con campi additivi; normalizzazione dei vecchi dati; backup/CSV/stampa invariati.
+
+## Test effettivi
+
+- Suite completa: **663 test superati, 0 fallimenti** (04/11/2026).
+- Regressione **69/69**, Fase 7 **52/52**, Fase 8 **37/37**, Fase 9 **33/33**, Fase 10 **43/43**, Fase 11 **46/46**, Fase 12 **32/32**, Fase 13 **51/51**, Fase 14 **49/49**, Fase 16 **50/50**, Fase 30 **78/78**, Fase 42 **53/53**, Fase 43 **31/31**, Fase 44 **39/39**.
+- `test_fase44.py` copre home/nav/rotte, multi-cane, email, scheda cane, cane nelle lezioni, esiti e ricalcolo consumi, pagina Pagamenti e registrazione, report mese/trimestre/anno, metriche clienti/cani, mobile e console.
+- Verifica manuale con dati reali di prova: desktop 1200 px, mobile 375 px, nessun overflow orizzontale.
+
+## Problemi aperti / note
+
+- I pacchetti restano a livello cliente; le singole lezioni sono associate al cane. La gestione cani consente aggiunta e modifica, non eliminazione.
+- La lezione scaduta senza esito viene completata automaticamente; per assenze/annullamenti occorre registrare l'esito prima o correggerlo dopo.
+- L'Archivio lezioni resta in sola consultazione; per modificare una lezione si usa la scheda cliente.
+- I filtri mese/cliente del Report e quelli dei Collaboratori restano indipendenti.
+- Pubblicata su `main`; GitHub Pages pubblica il commit di merge del branch `feat/restyling-gestionale-cinofilo`.
